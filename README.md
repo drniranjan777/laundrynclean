@@ -10,4 +10,4 @@ Each part lives on its own branch:
 | [`driver-app`](../../tree/driver-app) | Delivery partner app (Flutter), id `com.tallygen.partner` | `laundry-driver-app/` |
 | [`api-admin`](../../tree/api-admin) | Backend API (Node/Express + PostgreSQL) and admin panel (React + Vite) | `laundry-backend/`, `laundry-admin/` |
 
-Production API: `https://tallygen.com/nclean/api/v1`. Support: support@tallygen.com.
+Production API: `https://nclean.tallygen.com/api/v1`. Support: support@tallygen.com.
