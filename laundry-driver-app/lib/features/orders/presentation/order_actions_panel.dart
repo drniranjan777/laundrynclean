@@ -236,6 +236,7 @@ class DeliveredSheet extends ConsumerStatefulWidget {
 
 class _DeliveredSheetState extends ConsumerState<DeliveredSheet> {
   late final _cash = TextEditingController(text: widget.order.amountToCollect > 0 ? _plain(widget.order.amountToCollect) : '');
+  late final _receiver = TextEditingController(text: widget.order.customerName ?? '');
   final _note = TextEditingController();
   ProofPhoto? _photo;
   bool _saving = false;
@@ -246,6 +247,7 @@ class _DeliveredSheetState extends ConsumerState<DeliveredSheet> {
   @override
   void dispose() {
     _cash.dispose();
+    _receiver.dispose();
     _note.dispose();
     super.dispose();
   }
@@ -265,7 +267,9 @@ class _DeliveredSheetState extends ConsumerState<DeliveredSheet> {
       _cashError = null;
     });
     try {
-      await ref.read(orderActionsProvider).setStatus(widget.order.id, 'delivered', cashCollected: cash, note: _note.text, photo: _photo);
+      await ref
+          .read(orderActionsProvider)
+          .setStatus(widget.order.id, 'delivered', cashCollected: cash, note: _note.text, photo: _photo, receiverName: _receiver.text);
       if (!mounted) return;
       Navigator.pop(context);
       _toast(context, cash != null ? 'Delivered · ${rupees(cash)} collected' : 'Delivered');
@@ -304,6 +308,12 @@ class _DeliveredSheetState extends ConsumerState<DeliveredSheet> {
           padding: const EdgeInsets.only(bottom: 12),
           child: Text('Already paid (${widget.order.paymentLabel}). Nothing to collect.', style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
         ),
+      TextField(
+        controller: _receiver,
+        maxLength: 100,
+        textCapitalization: TextCapitalization.words,
+        decoration: const InputDecoration(labelText: 'Received by', hintText: 'Customer, family member, security…', isDense: true),
+      ),
       TextField(controller: _note, maxLength: 500, maxLines: 2, decoration: const InputDecoration(hintText: 'Note (optional, e.g. handed to security)', isDense: true)),
       PhotoPicker(photo: _photo, onChanged: (p) => setState(() => _photo = p), label: 'Proof photo (optional)'),
       const SizedBox(height: 16),

@@ -41,11 +41,13 @@ class OrderActions {
     }
   }
 
-  /// PATCH /drivers/orders/:id/status. [cashCollected] is required to deliver an unpaid COD order.
-  Future<void> setStatus(String orderId, String status, {String? note, ProofPhoto? photo, int? itemCount, double? cashCollected}) =>
+  /// PATCH /drivers/orders/:id/status. [cashCollected] is required to deliver an unpaid COD order;
+  /// [receiverName] is who took the clothes at the door.
+  Future<void> setStatus(String orderId, String status, {String? note, ProofPhoto? photo, int? itemCount, double? cashCollected, String? receiverName}) =>
       _call(() => _ref.read(dioProvider).patch<dynamic>('/drivers/orders/$orderId/status', data: {
             'status': status,
             if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+            if (receiverName != null && receiverName.trim().isNotEmpty) 'receiverName': receiverName.trim(),
             'photo': ?photo?.dataUrl,
             'itemCount': ?itemCount,
             'cashCollected': ?cashCollected,
