@@ -17,6 +17,8 @@ enum OrderStatus {
   ready('ready', 'Ready', 'Ready for delivery'),
   outForDelivery('out_for_delivery', 'Out for delivery', 'Out for delivery'),
   delivered('delivered', 'Delivered', 'Delivered'),
+  readyForPickup('ready_for_pickup', 'Ready to collect', 'Ready to collect at the store'),
+  collected('collected', 'Collected', 'Collected'),
   cancelled('cancelled', 'Cancelled', 'Cancelled');
 
   const OrderStatus(this.api, this.label, this.step);
@@ -26,18 +28,27 @@ enum OrderStatus {
 
   static OrderStatus from(String? value) => OrderStatus.values.firstWhere((s) => s.api == value, orElse: () => OrderStatus.pending);
 
-  bool get isActive => this != delivered && this != cancelled;
+  bool get isActive => this != delivered && this != collected && this != cancelled;
+
+  /// Handed over to the customer: delivered, or collected at the store
+  bool get isCompleted => this == delivered || this == collected;
 
   Color get color => switch (this) {
-        delivered => const Color(0xFF16A34A),
+        delivered || collected => const Color(0xFF16A34A),
         cancelled => AppColors.error,
         pending => const Color(0xFFB45309),
-        outForDelivery || ready => AppColors.blue,
+        outForDelivery || ready || readyForPickup => AppColors.blue,
         _ => AppColors.primary,
       };
 
-  /// The steps shown on the tracker for a normal order (pending and confirmed share the first one).
+  /// Tracker steps for a home pickup and delivery (pending and confirmed share the first one).
   static const trackerSteps = [confirmed, pickupScheduled, pickedUp, inProcess, ready, outForDelivery, delivered];
+
+  /// Tracker steps when the customer collects the clothes at the store.
+  static const collectionSteps = [confirmed, pickupScheduled, pickedUp, inProcess, ready, readyForPickup, collected];
+
+  /// Store orders: handed in at the counter, collected there.
+  static const storeSteps = [confirmed, inProcess, ready, readyForPickup, collected];
 }
 
 class OrderLine {

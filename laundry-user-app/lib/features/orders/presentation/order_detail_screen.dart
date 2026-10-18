@@ -162,7 +162,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
               _StatusHeader(order: o),
-              if (!o.isStoreOrder && o.status != OrderStatus.cancelled) ...[
+              if (o.status != OrderStatus.cancelled) ...[
                 const SizedBox(height: 12),
                 AppCard(child: _Tracker(order: o)),
               ],
@@ -230,10 +230,13 @@ class _StatusHeader extends StatelessWidget {
       OrderStatus.ready => 'Your clothes are ready and will be delivered soon',
       OrderStatus.outForDelivery => 'Your clothes are on the way to you',
       OrderStatus.delivered => 'Thank you for choosing NClean',
+      OrderStatus.readyForPickup => 'Your clothes are ready. Collect them at ${order.storeName ?? 'the store'}',
+      OrderStatus.collected => 'Collected at ${order.storeName ?? 'the store'}. Thank you for choosing NClean',
       OrderStatus.cancelled => order.paymentStatus == 'refunded' ? 'The amount paid was refunded to your wallet' : 'This order was cancelled',
     };
     final icon = switch (s) {
-      OrderStatus.delivered => Icons.check_circle,
+      OrderStatus.delivered || OrderStatus.collected => Icons.check_circle,
+      OrderStatus.readyForPickup => Icons.storefront,
       OrderStatus.cancelled => Icons.cancel,
       OrderStatus.outForDelivery => Icons.delivery_dining,
       OrderStatus.pickedUp || OrderStatus.inProcess => Icons.local_laundry_service,
@@ -271,7 +274,8 @@ class _Tracker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final steps = OrderStatus.trackerSteps;
+    final collecting = order.status == OrderStatus.readyForPickup || order.status == OrderStatus.collected;
+    final steps = order.isStoreOrder ? OrderStatus.storeSteps : (collecting ? OrderStatus.collectionSteps : OrderStatus.trackerSteps);
     final current = order.status == OrderStatus.pending ? 0 : steps.indexOf(order.status).clamp(0, steps.length - 1);
     DateTime? when(OrderStatus s) {
       if (s == OrderStatus.confirmed) return order.createdAt;
@@ -282,11 +286,11 @@ class _Tracker extends StatelessWidget {
     final failures = order.timeline.where((e) => e.isFailure).toList();
     final rows = <Widget>[];
     for (var i = 0; i < steps.length; i++) {
-      final done = i < current || (i == current && order.status == OrderStatus.delivered);
-      final isCurrent = i == current && order.status != OrderStatus.delivered;
+      final done = i < current || (i == current && order.status.isCompleted);
+      final isCurrent = i == current && !order.status.isCompleted;
       final at = (done || isCurrent) ? when(steps[i]) : null;
       rows.add(_TrackerRow(
-        title: steps[i].step,
+        title: order.isStoreOrder && steps[i] == OrderStatus.confirmed ? 'Received at the store' : steps[i].step,
         subtitle: at == null ? null : friendlyDateTime(at),
         state: done ? _Dot.done : (isCurrent ? _Dot.current : _Dot.todo),
         last: i == steps.length - 1,

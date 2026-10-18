@@ -17,7 +17,7 @@ class OrdersScreen extends ConsumerWidget {
     final orders = ref.watch(ordersProvider);
     final all = orders.value?.orders ?? const <Order>[];
     final ongoing = all.where((o) => o.status.isActive).toList();
-    final completed = all.where((o) => o.status == OrderStatus.delivered).toList();
+    final completed = all.where((o) => o.status.isCompleted).toList();
     final cancelled = all.where((o) => o.status == OrderStatus.cancelled).toList();
 
     return DefaultTabController(
@@ -58,7 +58,7 @@ class OrdersScreen extends ConsumerWidget {
             _OrderList(
               orders: completed,
               hasMore: page.hasMore,
-              empty: const EmptyState(icon: Icons.inventory_2_outlined, title: 'No completed orders yet', message: 'Delivered orders show up here.'),
+              empty: const EmptyState(icon: Icons.inventory_2_outlined, title: 'No completed orders yet', message: 'Delivered and collected orders show up here.'),
             ),
             _OrderList(
               orders: cancelled,
@@ -117,8 +117,10 @@ class OrderCard extends ConsumerWidget {
 
   final Order order;
 
-  /// "Pickup 21 Oct 2026, 08:00 AM - 10:00 AM" until it's picked up, then "Expected by 23 Oct 2026".
+  /// "Pickup 21 Oct 2026, 08:00 AM - 10:00 AM" until it's picked up, then "Expected by 23 Oct 2026"
+  /// (or "Ready to collect at the store").
   static String? _nextStep(Order order) {
+    if (order.status == OrderStatus.readyForPickup) return 'Ready to collect at ${order.storeName ?? 'the store'}';
     if (order.status.index <= OrderStatus.pickupScheduled.index) {
       return order.pickupDate == null ? null : 'Pickup ${shortDate(DateTime.tryParse(order.pickupDate!))}${order.slot == null ? '' : ', ${order.slot}'}';
     }
@@ -155,7 +157,7 @@ class OrderCard extends ConsumerWidget {
           const SizedBox(height: 10),
           Text('$preview${more > 0 ? ' +$more more' : ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: text.bodyMedium),
         ],
-        if (order.status.isActive && !order.isStoreOrder && _nextStep(order) != null) ...[
+        if (order.status.isActive && (!order.isStoreOrder || order.status == OrderStatus.readyForPickup) && _nextStep(order) != null) ...[
           const SizedBox(height: 8),
           Row(children: [
             Icon(order.status.index <= OrderStatus.pickupScheduled.index ? Icons.event_outlined : Icons.local_shipping_outlined,

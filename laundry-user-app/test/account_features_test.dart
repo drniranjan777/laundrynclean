@@ -95,6 +95,19 @@ void main() {
       expect(Order.fromJson({..._orderJson(status: 'confirmed'), 'orderType': 'offline'}).canCancel, isFalse); // store orders
     });
 
+    test('shop collection statuses: ready to collect and collected', () {
+      final ready = Order.fromJson({..._orderJson(status: 'ready_for_pickup'), 'orderType': 'offline'});
+      expect(ready.status, OrderStatus.readyForPickup);
+      expect(ready.status.label, 'Ready to collect');
+      expect(ready.status.isActive, isTrue);
+      final done = Order.fromJson({..._orderJson(status: 'collected'), 'orderType': 'offline'});
+      expect(done.status, OrderStatus.collected);
+      expect(done.status.isActive, isFalse);
+      expect(done.status.isCompleted, isTrue);
+      expect(OrderStatus.from('delivered').isCompleted, isTrue);
+      expect(OrderStatus.storeSteps.last, OrderStatus.collected);
+    });
+
     test('plans, trial and my subscription', () {
       final plan = Plan.fromJson({
         'id': 'p1', 'name': 'Basic', 'price': '150.00', 'durationType': 'month', 'duration': 30, 'features': [],
@@ -172,6 +185,19 @@ void main() {
       expect(find.text('- ₹60'), findsOneWidget);
       expect(find.text('Reorder'), findsOneWidget);
       expect(find.text('Cancel order'), findsNothing); // too late to cancel
+    });
+
+    testWidgets('store order ready to collect: tracker with the store steps', (tester) async {
+      final order = Order.fromJson({..._orderJson(status: 'ready_for_pickup'), 'orderType': 'offline'});
+      await tester.pumpWidget(_app(const OrderDetailScreen(orderId: 'b1'), [
+        orderDetailProvider.overrideWith((ref, id) async => order),
+      ]));
+      await tester.pumpAndSettle();
+      expect(find.text('Ready to collect'), findsOneWidget);
+      expect(find.textContaining('Collect them at Main Store'), findsOneWidget);
+      expect(find.text('Received at the store'), findsOneWidget);
+      expect(find.text('Ready to collect at the store'), findsOneWidget);
+      expect(find.text('Out for delivery'), findsNothing);
     });
 
     testWidgets('membership: trial and paid plans, wallet balance check', (tester) async {
