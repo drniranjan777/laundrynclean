@@ -4,6 +4,7 @@ const User = require('../models/user.model');
 const { calculateGst } = require('./gst.controller');
 const { Location } = require('../models/location.model');
 const { nextInvoiceNumber } = require('../services/location.service');
+const { startOfIndiaDay } = require('../utils/booking-filters');
 const { isUuid, scopedLocationId, locationFilter, canAccessLocation } = require('../utils/location-scope');
 const { sendSuccess, sendError } = require('../utils/response');
 const { sequelize } = require('../config/db');
@@ -274,12 +275,12 @@ const scanBarcode = async (req, res, next) => {
  */
 const getOfflineStats = async (req, res, next) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
     const offline = { orderType: 'offline', ...locationFilter(req) };
 
     const totalOfflineOrders = await Booking.count({ where: offline });
+    // Today in India time, the same day the Orders page's date filter uses
     const todayOfflineOrders = await Booking.count({
-      where: { ...offline, created_at: { [Op.gte]: new Date(today) } },
+      where: { ...offline, created_at: { [Op.gte]: startOfIndiaDay() } },
     });
 
     const offlineRevenue = await Booking.sum('total', {

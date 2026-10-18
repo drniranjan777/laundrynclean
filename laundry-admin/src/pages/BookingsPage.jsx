@@ -1,58 +1,75 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 import { useLocations } from '../context/LocationContext';
 import { ConfirmDeliveredDialog, ConfirmCollectedDialog, ReasonDialog, OrderHistoryModal } from '../components/OrderWorkflow';
-import { STATUS_ORDER, TRANSITIONS, statusLabel, statusBadge, needsReason, formatDateTime } from '../utils/orderStatus';
+import { STATUS_ORDER, TRANSITIONS, statusLabel, statusBadge, needsReason, formatDateTime, formatDate } from '../utils/orderStatus';
+
+const PAYMENT_LABELS = { paid: 'Paid', pending: 'Payment pending', failed: 'Payment failed', refunded: 'Refunded' };
+const METHOD_LABELS = { cod: 'Cash', upi: 'UPI', card: 'Card', wallet: 'Wallet' };
 
 export default function BookingsPage() {
   const { locations, isManager } = useLocations();
   const storeName = (id) => locations.find(l => l.id === id)?.name;
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState(''); // '', 'online', 'offline'
-  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Filters live in the address (?status=&type=&payment=&method=&date=&page=), so dashboard cards can link
+  // straight to a filtered list and the list survives a reload
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filter = searchParams.get('status') || '';
+  const typeFilter = searchParams.get('type') || ''; // '', 'online', 'offline'
+  const payment = searchParams.get('payment') || '';
+  const method = searchParams.get('method') || '';
+  const date = searchParams.get('date') || '';
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const setParam = (key, value) => {
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set(key, value); else next.delete(key);
+    if (key !== 'page') next.delete('page');
+    setSearchParams(next);
+  };
+  const setPage = (n) => setParam('page', n > 1 ? String(n) : '');
+
+  // One list for online and store orders, filtered and paged by the API
   const fetchBookings = async () => {
     setLoading(true);
     try {
-      const params = { page, limit: 15 };
-      if (filter) params.status = filter;
-
-      if (typeFilter === 'offline') {
-        // Fetch only offline orders
-        const res = await api.get('/admin/pos/orders', { params: { ...params, status: filter || undefined } });
-        setBookings(res.data?.orders || []);
-        setTotalPages(res.data?.totalPages || 1);
-      } else if (typeFilter === 'online') {
-        // Fetch only online orders
-        const res = await api.get('/bookings', { params });
-        const onlineOnly = (res.data?.bookings || []).filter(b => b.orderType !== 'offline');
-        setBookings(onlineOnly);
-        setTotalPages(res.data?.totalPages || 1);
-      } else {
-        // All - fetch both and merge
-        const [onlineRes, offlineRes] = await Promise.all([
-          api.get('/bookings', { params }).catch(() => ({ data: { bookings: [] } })),
-          api.get('/admin/pos/orders', { params: { limit: 50 } }).catch(() => ({ data: { orders: [] } })),
-        ]);
-        const onlineOrders = (onlineRes.data?.bookings || []).filter(b => b.orderType !== 'offline');
-        const offlineOrders = offlineRes.data?.orders || [];
-        const all = [...onlineOrders, ...offlineOrders].sort((a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0));
-        setBookings(all.slice(0, 20));
-        setTotalPages(1);
-      }
+      const res = await api.get('/bookings', {
+        params: {
+          page,
+          limit: 15,
+          status: filter || undefined,
+          orderType: typeFilter || undefined,
+          paymentStatus: payment || undefined,
+          paymentMethod: method || undefined,
+          dateFrom: date || undefined,
+          dateTo: date || undefined,
+        },
+      });
+      setBookings(res.data?.bookings || []);
+      setTotal(res.data?.total ?? 0);
+      setTotalPages(Math.max(1, res.data?.totalPages || 1));
     } catch (err) {
-      // No error toast on empty results
       setBookings([]);
+      setTotal(0);
+      toast.error(err.message || 'Could not load orders');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchBookings(); }, [page, filter, typeFilter]);
+  useEffect(() => { fetchBookings(); }, [page, filter, typeFilter, payment, method, date]);
+
+  // Filters that come from a dashboard link and have no control of their own: shown as removable chips
+  const chips = [
+    payment && { key: 'payment', label: PAYMENT_LABELS[payment] || payment },
+    method && { key: 'method', label: `Paid by ${METHOD_LABELS[method] || method}` },
+    date && { key: 'date', label: `Placed ${formatDate(`${date}T00:00:00`)}` },
+  ].filter(Boolean);
 
   const [drivers, setDrivers] = useState([]);
   useEffect(() => {
@@ -100,18 +117,30 @@ export default function BookingsPage() {
         <div className="flex gap-2">
           <div className="flex bg-gray-100 rounded-lg p-0.5">
             {[{ value: '', label: 'All' }, { value: 'online', label: 'Online' }, { value: 'offline', label: 'Offline' }].map(t => (
-              <button key={t.value} onClick={() => { setTypeFilter(t.value); setPage(1); }}
+              <button key={t.value} onClick={() => setParam('type', t.value)}
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${typeFilter === t.value ? 'bg-white shadow-sm text-secondary' : 'text-gray-500'}`}>
                 {t.label}
               </button>
             ))}
           </div>
-          <select value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm">
+          <select value={filter} onChange={(e) => setParam('status', e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
             <option value="">All Status</option>
             {STATUS_ORDER.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         </div>
       </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 -mt-3 mb-4">
+          {chips.map(c => (
+            <span key={c.key} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-secondary/10 text-secondary text-xs font-medium">
+              {c.label}
+              <button onClick={() => setParam(c.key, '')} className="w-4 h-4 rounded-full hover:bg-secondary/20 leading-none" aria-label={`Remove ${c.label} filter`}>×</button>
+            </span>
+          ))}
+          <button onClick={() => setSearchParams(new URLSearchParams())} className="text-xs text-gray-500 hover:text-gray-700 underline">Clear all</button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -189,9 +218,9 @@ export default function BookingsPage() {
         </div>
 
         <div className="flex items-center justify-between px-4 py-3 border-t">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Previous</button>
-          <span className="text-sm text-gray-500">Page {page} of {totalPages}</span>
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Next</button>
+          <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Previous</button>
+          <span className="text-sm text-gray-500">Page {page} of {totalPages} · {total} order{total === 1 ? '' : 's'}</span>
+          <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Next</button>
         </div>
       </div>
 

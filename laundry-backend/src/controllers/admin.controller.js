@@ -6,7 +6,8 @@ const { Location } = require('../models/location.model');
 const { generateToken, generateRefreshToken } = require('../config/jwt');
 const { sendSuccess, sendError } = require('../utils/response');
 const { locationFilter } = require('../utils/location-scope');
-const { Op } = require('sequelize');
+const { startOfIndiaDay } = require('../utils/booking-filters');
+const { Op, fn, col, literal } = require('sequelize');
 
 /**
  * POST /api/v1/admin/login
@@ -87,6 +88,25 @@ const getDashboardStats = async (req, res, next) => {
       raw: true,
     });
 
+    // Orders placed on each of the last 7 days (India time), online vs store
+    const firstDay = startOfIndiaDay();
+    firstDay.setDate(firstDay.getDate() - 6);
+    const dayExpr = literal("to_char((\"Booking\".\"created_at\" AT TIME ZONE 'Asia/Kolkata')::date, 'YYYY-MM-DD')");
+    const perDay = await Booking.findAll({
+      where: { ...scope, created_at: { [Op.gte]: firstDay } },
+      attributes: [[dayExpr, 'day'], 'orderType', [fn('COUNT', col('id')), 'count']],
+      group: [dayExpr, 'orderType'],
+      raw: true,
+    });
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(firstDay.getTime() + i * 86400000);
+      const day = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', timeZone: 'Asia/Kolkata' });
+      const count = (type) => Number(perDay.find(r => String(r.day).slice(0, 10) === day && r.orderType === type)?.count || 0);
+      week.push({ date: day, label, online: count('online'), offline: count('offline') });
+    }
+
     return sendSuccess(res, 200, 'Dashboard stats fetched', {
       users: totalUsers,
       drivers: totalDrivers,
@@ -94,6 +114,7 @@ const getDashboardStats = async (req, res, next) => {
       deliveredOrders,
       pendingOrders,
       revenue: parseFloat(revenueResult?.totalRevenue || 0),
+      week,
     });
   } catch (error) {
     next(error);

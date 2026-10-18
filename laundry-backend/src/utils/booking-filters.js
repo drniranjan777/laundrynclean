@@ -11,10 +11,12 @@ const INDIA = '+05:30';
  * - dateFrom / dateTo: order date (YYYY-MM-DD, India time), inclusive
  * - driverId: delivery partner (or 'none' for orders without one)
  * - orderType: online | offline
+ * - paymentStatus: paid | pending | failed | refunded
+ * - paymentMethod: cod (cash) | upi | card | wallet
  * Returns { where } or { error } for a bad filter.
  */
 const staffOrderFilters = (req) => {
-  const { search, dateFrom, dateTo, driverId, orderType } = req.query;
+  const { search, dateFrom, dateTo, driverId, orderType, paymentStatus, paymentMethod } = req.query;
   const where = { ...locationFilter(req) };
 
   const s = typeof search === 'string' ? search.trim() : '';
@@ -51,7 +53,23 @@ const staffOrderFilters = (req) => {
     where.orderType = orderType;
   }
 
+  if (paymentStatus) {
+    if (!['paid', 'pending', 'failed', 'refunded'].includes(paymentStatus)) return { error: 'Unknown payment status' };
+    where.paymentStatus = paymentStatus;
+  }
+
+  if (paymentMethod) {
+    if (!['cod', 'upi', 'card', 'wallet'].includes(paymentMethod)) return { error: 'Unknown payment method' };
+    where.paymentMethod = paymentMethod;
+  }
+
   return { where };
 };
 
-module.exports = { staffOrderFilters };
+/** Start of today in India time, as a Date (dashboard "today" figures match the date filter above) */
+const startOfIndiaDay = (date = new Date()) => {
+  const day = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return new Date(`${day}T00:00:00${INDIA}`);
+};
+
+module.exports = { staffOrderFilters, startOfIndiaDay };
