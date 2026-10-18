@@ -59,6 +59,18 @@ const BookingEvent = sequelize.define('BookingEvent', {
     allowNull: true,
     field: 'item_count',
   },
+  // Who received the clothes (delivery or shop collection)
+  receiverName: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    field: 'receiver_name',
+  },
+  // The delivery partner who handed it over (the actor may be the staff member who confirmed it)
+  partnerId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    field: 'partner_id',
+  },
 }, {
   tableName: 'booking_events',
   timestamps: true,

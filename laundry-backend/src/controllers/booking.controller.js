@@ -10,11 +10,13 @@ const { Op } = require('sequelize');
 const { calculatePromoDiscount, markPromoUsed } = require('./promocode.controller');
 const { debitWallet, refundToWallet } = require('./wallet.controller');
 const { findLocationByPincode, getPriceOverrides, priceAt, getSlotCapacities } = require('../services/location.service');
-const { locationFilter, canAccessLocation } = require('../utils/location-scope');
+const { canAccessLocation } = require('../utils/location-scope');
 const { Location } = require('../models/location.model');
 const paymentService = require('../services/payment.service');
 const { failureSummaries, recordStaffEvent, customerTimeline } = require('./booking-event.controller');
 const { memberBenefits, memberDiscountOn } = require('../services/subscription.service');
+const { staffOrderFilters } = require('../utils/booking-filters');
+const { ORDER_STATUS, ORDER_STATUS_BACKWARD } = require('../utils/constants');
 
 const DELIVERY_FEE = 50;
 const FREE_DELIVERY_THRESHOLD = 250;
@@ -379,15 +381,30 @@ const LOCATION_SUMMARY = { model: Location, as: 'location', attributes: ['id', '
 /**
  * GET /api/v1/bookings
  * Get bookings - admin sees all (or the switcher's location), a branch manager
- * sees their location, a customer sees their own
+ * sees their location, a customer sees their own.
+ * ?status= one status or several (comma separated). Staff can also filter with ?search= (order number, customer
+ * name or mobile), ?dateFrom= / ?dateTo= (order date), ?driverId= and ?orderType=; staff results include the
+ * delivery partner. Delivered and collected lists are sorted by when the handover happened.
  */
 const getBookings = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = isStaff(req.user) ? locationFilter(req) : { userId: req.user.id };
-    if (status) where.status = status;
+    let where;
+    if (isStaff(req.user)) {
+      const filters = staffOrderFilters(req);
+      if (filters.error) return sendError(res, 422, filters.error);
+      where = filters.where;
+    } else {
+      where = { userId: req.user.id };
+    }
+    const statuses = String(status || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.some(s => !Object.values(ORDER_STATUS).includes(s))) return sendError(res, 422, 'Unknown order status');
+    if (statuses.length) where.status = statuses.length === 1 ? statuses[0] : statuses;
+
+    const handoverOrder = statuses.length === 1 && statuses[0] === 'delivered' ? [['deliveredAt', 'DESC']]
+      : statuses.length === 1 && statuses[0] === 'collected' ? [['collectedAt', 'DESC']] : [];
 
     const { rows, count } = await Booking.findAndCountAll({
       where,
@@ -395,9 +412,10 @@ const getBookings = async (req, res, next) => {
         { model: BookingItem, as: 'items' },
         { model: TimeSlot, as: 'timeSlot', attributes: ['label'] },
         LOCATION_SUMMARY,
+        ...(isStaff(req.user) ? [{ model: User, as: 'driver', attributes: ['id', 'name', 'phone'] }] : []),
       ],
       distinct: true,
-      order: [['created_at', 'DESC']],
+      order: [...handoverOrder, ['created_at', 'DESC']],
       limit: parseInt(limit),
       offset,
     });
@@ -532,9 +550,29 @@ const updateBookingStatus = async (req, res, next) => {
     }
 
     const { status } = req.body;
+    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+    const note = typeof req.body.note === 'string' ? req.body.note.trim() : '';
+
+    // The handover is confirmed through /admin/bookings/:id/deliver or /collect, which record who received it
+    if (status === 'delivered' || status === 'collected') {
+      await t.rollback();
+      return booking.status === status
+        ? sendError(res, 409, `Order ${booking.orderNumber} is already ${status}`)
+        : sendError(res, 400, `Use "Confirm ${status}" so the handover is recorded`);
+    }
     if (!canChangeStatus(booking.status, status)) {
       await t.rollback();
       return sendError(res, 400, `Cannot change status from ${booking.status} to ${status}`);
+    }
+    // Cancelling, and sending an order back to Ready, need a reason for the history
+    const needsReason = booking.status !== status && (status === 'cancelled' || ORDER_STATUS_BACKWARD.includes(`${booking.status}>${status}`));
+    if (needsReason && (reason.length < 3 || reason.length > 255)) {
+      await t.rollback();
+      return sendError(res, 422, status === 'cancelled' ? 'Give a reason for cancelling the order' : 'Give a reason for sending the order back to Ready');
+    }
+    if (note.length > 500) {
+      await t.rollback();
+      return sendError(res, 422, 'Notes can be at most 500 characters');
     }
 
     const fromStatus = booking.status;
@@ -546,7 +584,9 @@ const updateBookingStatus = async (req, res, next) => {
     }
     // Staff changes go into the order's history next to the driver's (shown on Order Status)
     if (fromStatus !== status) {
-      await recordStaffEvent({ bookingId: booking.id, actorId: req.user.id, type: 'status', fromStatus, toStatus: status }, t);
+      await recordStaffEvent({
+        bookingId: booking.id, actorId: req.user.id, type: 'status', fromStatus, toStatus: status, reason: reason || null, note: note || null,
+      }, t);
     }
 
     await t.commit();

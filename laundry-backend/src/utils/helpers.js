@@ -28,4 +28,7 @@ const formatCurrency = (amount) => {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
 };
 
-module.exports = { generateOrderNumber, canChangeStatus, paginate, formatCurrency };
+/** Cash still to collect for an order: its total for an unpaid cash order (COD, or a store order paid later), else 0 */
+const cashDue = (booking) => (booking.paymentMethod === 'cod' && booking.paymentStatus !== 'paid' ? Number(booking.total) : 0);
+
+module.exports = { generateOrderNumber, canChangeStatus, paginate, formatCurrency, cashDue };

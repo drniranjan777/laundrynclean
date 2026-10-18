@@ -30,7 +30,7 @@ router.post('/confirm', [
 router.get('/', bookingController.getBookings);
 router.get('/:id', bookingController.getBookingById);
 router.patch('/:id/status', authorize('admin', 'manager'), [
-  body('status').isIn(['pending', 'confirmed', 'pickup_scheduled', 'picked_up', 'in_process', 'ready', 'out_for_delivery', 'delivered', 'cancelled']).withMessage('Invalid status'),
+  body('status').isIn(['pending', 'confirmed', 'pickup_scheduled', 'picked_up', 'in_process', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'collected', 'cancelled']).withMessage('Invalid status'),
 ], validate, bookingController.updateBookingStatus);
 router.patch('/:id/cancel', bookingController.cancelBooking);
 router.post('/:id/verify-payment', [

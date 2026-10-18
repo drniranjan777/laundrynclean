@@ -7,6 +7,7 @@ const adminWallet = require('../controllers/admin-wallet.controller');
 const gstController = require('../controllers/gst.controller');
 const posController = require('../controllers/pos.controller');
 const locationAdmin = require('../controllers/location-admin.controller');
+const orderWorkflow = require('../controllers/order-workflow.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { body } = require('express-validator');
@@ -35,6 +36,11 @@ router.delete('/delivery-boys/:id', driverController.deleteDeliveryBoy);
 // Assign driver to booking
 router.post('/bookings/:id/assign-driver', driverController.assignDriverToBooking);
 // Order history: driver-app actions, staff status changes, driver assignment
+// Order Management: tab counts, delivery / collection confirmation, corrections (admins only)
+router.get('/bookings/status-counts', orderWorkflow.statusCounts);
+router.post('/bookings/:id/deliver', orderWorkflow.confirmDelivered);
+router.post('/bookings/:id/collect', orderWorkflow.confirmCollected);
+router.post('/bookings/:id/correct-status', authorize('admin'), orderWorkflow.correctStatus);
 router.get('/bookings/:id/events', require('../controllers/booking-event.controller').getBookingEvents);
 
 // POS (Offline Orders)

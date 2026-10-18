@@ -122,7 +122,8 @@ const Booking = sequelize.define('Booking', {
   status: {
     type: DataTypes.ENUM(
       'pending', 'confirmed', 'pickup_scheduled', 'picked_up',
-      'in_process', 'ready', 'out_for_delivery', 'delivered', 'cancelled'
+      'in_process', 'ready', 'out_for_delivery', 'delivered', 'cancelled',
+      'ready_for_pickup', 'collected'
     ),
     defaultValue: 'pending',
   },
@@ -139,6 +140,27 @@ const Booking = sequelize.define('Booking', {
     type: DataTypes.DATEONLY,
     allowNull: true,
     field: 'estimated_delivery_date',
+  },
+  // Handover: delivered to the customer, or collected by them at the shop
+  deliveredAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'delivered_at',
+  },
+  receivedBy: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    field: 'received_by',
+  },
+  collectedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'collected_at',
+  },
+  collectedBy: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    field: 'collected_by',
   },
   // POS / Offline order fields
   orderType: {

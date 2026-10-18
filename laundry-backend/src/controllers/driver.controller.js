@@ -5,7 +5,7 @@ const Address = require('../models/address.model');
 const { generateToken, generateRefreshToken } = require('../config/jwt');
 const authService = require('../services/auth.service');
 const { sendSuccess, sendError } = require('../utils/response');
-const { canChangeStatus } = require('../utils/helpers');
+const { canChangeStatus, cashDue } = require('../utils/helpers');
 const { Location } = require('../models/location.model');
 const { isUuid, scopedLocationId, locationFilter, canAccessLocation } = require('../utils/location-scope');
 
@@ -104,7 +104,7 @@ const getDeliveryBoys = async (req, res, next) => {
     // Get assigned order count for each driver
     const driversWithStats = await Promise.all(drivers.map(async (driver) => {
       const activeOrders = await Booking.count({
-        where: { driverId: driver.id, status: { [Op.notIn]: ['delivered', 'cancelled'] } },
+        where: { driverId: driver.id, status: { [Op.notIn]: ['delivered', 'collected', 'cancelled'] } },
       });
       const totalDelivered = await Booking.count({
         where: { driverId: driver.id, status: 'delivered' },
@@ -321,9 +321,10 @@ const DRIVER_STAGES = {
   pending: 'pickup', confirmed: 'pickup', pickup_scheduled: 'pickup',
   picked_up: 'to_store', in_process: 'at_store',
   ready: 'delivery', out_for_delivery: 'delivery',
-  delivered: 'done', cancelled: 'cancelled',
+  ready_for_pickup: 'at_store', // the customer collects it at the shop
+  delivered: 'done', collected: 'done', cancelled: 'cancelled',
 };
-const FINISHED_STATUSES = ['delivered', 'cancelled'];
+const FINISHED_STATUSES = ['delivered', 'collected', 'cancelled'];
 
 const getMyOrders = async (req, res, next) => {
   try {
@@ -412,7 +413,6 @@ const getMyOrders = async (req, res, next) => {
 const DRIVER_STATUSES = ['picked_up', 'in_process', 'out_for_delivery', 'delivered'];
 
 /** Unpaid cash-on-delivery amount the driver has to collect (0 when nothing is due) */
-const cashDue = (booking) => (booking.paymentMethod === 'cod' && booking.paymentStatus !== 'paid' ? Number(booking.total) : 0);
 
 /** Optional proof photo from the app (base64 data URL); saved before the transaction */
 const savePhoto = (photo, bookingId) => (photo ? saveDataUrlImage(photo, 'proofs', `order-${bookingId.slice(0, 8)}`) : Promise.resolve(null));
@@ -427,8 +427,10 @@ const invalidExtras = ({ note, itemCount }) => {
 
 /**
  * PATCH /api/v1/drivers/orders/:id/status
- * Body: { status, note?, photo?, itemCount?, cashCollected? }
+ * Body: { status, note?, photo?, itemCount?, cashCollected?, receiverName? }
  * - status: picked_up | in_process (handed to store) | out_for_delivery | delivered
+ * - receiverName: who took the clothes at the door (delivered); the delivery time is recorded too
+ * - Delivering an order that is already delivered is refused (409).
  * - itemCount: pieces counted at pickup
  * - photo: proof (data URL)
  * - cashCollected: required to deliver an unpaid COD order. It must cover the amount due, and the order is then marked paid.
@@ -441,6 +443,8 @@ const updateOrderStatus = async (req, res, next) => {
   }
   const extrasError = invalidExtras({ note, itemCount });
   if (extrasError) return sendError(res, 422, extrasError);
+  const receiverName = typeof req.body.receiverName === 'string' ? req.body.receiverName.trim().replace(/\s+/g, ' ') : '';
+  if (receiverName.length > 100) return sendError(res, 422, 'Receiver name can be at most 100 characters');
   if (cashCollected !== undefined && cashCollected !== null && !(typeof cashCollected === 'number' && Number.isFinite(cashCollected) && cashCollected >= 0)) {
     return sendError(res, 422, 'Cash collected must be an amount in rupees');
   }
@@ -469,7 +473,10 @@ const updateOrderStatus = async (req, res, next) => {
     if (!booking) return fail(404, 'Booking not found or not assigned to you');
 
     const fromStatus = booking.status;
+    if (status === 'delivered' && fromStatus === 'delivered') return fail(409, 'This order is already delivered');
     if (!canChangeStatus(fromStatus, status)) return fail(400, `Cannot change status from ${fromStatus} to ${status}`);
+    // Staff can start processing clothes received at the shop; a driver hands over only what they picked up
+    if (status === 'in_process' && !['picked_up', 'in_process'].includes(fromStatus)) return fail(400, 'Pick up the clothes before handing them to the store');
     const changed = fromStatus !== status;
 
     // D4: cash on delivery is collected at the door before the order can be delivered
@@ -481,12 +488,18 @@ const updateOrderStatus = async (req, res, next) => {
     }
 
     booking.status = status;
+    const delivering = status === 'delivered' && changed;
+    if (delivering) {
+      booking.deliveredAt = new Date();
+      booking.receivedBy = receiverName || null;
+    }
     await booking.save({ transaction: t });
 
     const event = { bookingId: booking.id, actorId: req.user.id };
     if (changed || note || photoUrl || itemCount !== undefined) {
       await BookingEvent.create({
         ...event, type: 'status', fromStatus, toStatus: status, note: note || null, photoUrl, itemCount: itemCount ?? null,
+        ...(delivering ? { receiverName: receiverName || null, partnerId: req.user.id } : {}),
       }, { transaction: t });
     }
     if (due > 0) {
@@ -588,7 +601,7 @@ const getDriverStats = async (req, res, next) => {
 
     const totalAssigned = await Booking.count({ where: { driverId } });
     const totalDelivered = await Booking.count({ where: { driverId, status: 'delivered' } });
-    const activeOrders = await Booking.count({ where: { driverId, status: { [Op.notIn]: ['delivered', 'cancelled'] } } });
+    const activeOrders = await Booking.count({ where: { driverId, status: { [Op.notIn]: ['delivered', 'collected', 'cancelled'] } } });
     const todayOrders = await Booking.count({ where: { driverId, pickupDate: today } });
 
     return sendSuccess(res, 200, 'Stats fetched', {

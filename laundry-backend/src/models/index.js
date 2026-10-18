@@ -28,6 +28,7 @@ UserSubscription.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 User.hasMany(Booking, { foreignKey: 'user_id', as: 'bookings' });
 Booking.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+Booking.belongsTo(User, { foreignKey: 'driver_id', as: 'driver' });
 
 User.hasMany(Review, { foreignKey: 'user_id', as: 'reviews' });
 Review.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
@@ -48,6 +49,7 @@ Booking.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
 Booking.hasMany(BookingEvent, { foreignKey: 'booking_id', as: 'events' });
 BookingEvent.belongsTo(Booking, { foreignKey: 'booking_id', as: 'booking' });
 BookingEvent.belongsTo(User, { foreignKey: 'actor_id', as: 'actor' });
+BookingEvent.belongsTo(User, { foreignKey: 'partner_id', as: 'partner' });
 Location.hasMany(ServiceablePincode, { foreignKey: 'location_id', as: 'pincodes' });
 ServiceablePincode.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
 Location.hasMany(User, { foreignKey: 'location_id', as: 'staff' });

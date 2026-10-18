@@ -2,20 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
 import { useLocations } from '../context/LocationContext';
-
-const statusColors = {
-  pending: 'bg-yellow-100 text-yellow-700',
-  confirmed: 'bg-blue-100 text-blue-700',
-  pickup_scheduled: 'bg-indigo-100 text-indigo-700',
-  picked_up: 'bg-indigo-100 text-indigo-700',
-  in_process: 'bg-purple-100 text-purple-700',
-  ready: 'bg-teal-100 text-teal-700',
-  out_for_delivery: 'bg-orange-100 text-orange-700',
-  delivered: 'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-700',
-};
-
-const statusOptions = ['pending', 'confirmed', 'pickup_scheduled', 'picked_up', 'in_process', 'ready', 'out_for_delivery', 'delivered', 'cancelled'];
+import { ConfirmDeliveredDialog, ConfirmCollectedDialog, ReasonDialog, OrderHistoryModal } from '../components/OrderWorkflow';
+import { STATUS_ORDER, TRANSITIONS, statusLabel, statusBadge, needsReason, formatDateTime } from '../utils/orderStatus';
 
 export default function BookingsPage() {
   const { locations, isManager } = useLocations();
@@ -66,10 +54,22 @@ export default function BookingsPage() {
 
   useEffect(() => { fetchBookings(); }, [page, filter, typeFilter]);
 
-  const updateStatus = async (id, status) => {
+  const [drivers, setDrivers] = useState([]);
+  useEffect(() => {
+    api.get('/admin/delivery-boys').then(res => setDrivers((res.data || []).filter(d => d.isActive))).catch(() => {});
+  }, []);
+  const [dialog, setDialog] = useState(null); // { kind, booking, to? }
+  const afterDialog = () => { setDialog(null); setSelectedOrder(null); fetchBookings(); };
+
+  // Delivered / collected are confirmed in a dialog; cancelling and sending back ask for a reason
+  const updateStatus = async (booking, status) => {
+    if (status === booking.status) return;
+    if (status === 'delivered') return setDialog({ kind: 'deliver', booking });
+    if (status === 'collected') return setDialog({ kind: 'collect', booking });
+    if (needsReason(booking.status, status)) return setDialog({ kind: 'reason', booking, to: status });
     try {
-      await api.patch(`/bookings/${id}/status`, { status });
-      toast.success('Status updated');
+      await api.patch(`/bookings/${booking.id}/status`, { status });
+      toast.success(`Moved to ${statusLabel(status)}`);
       fetchBookings();
     } catch (err) {
       toast.error(err.message || 'Failed to update status');
@@ -108,7 +108,7 @@ export default function BookingsPage() {
           </div>
           <select value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm">
             <option value="">All Status</option>
-            {statusOptions.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+            {STATUS_ORDER.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
         </div>
       </div>
@@ -158,18 +158,28 @@ export default function BookingsPage() {
                     <td className="px-4 py-3 hidden lg:table-cell">{b.items?.length || 0}</td>
                     <td className="px-4 py-3 font-medium">₹{b.total}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[b.status] || 'bg-gray-100'}`}>
-                        {b.status?.replace(/_/g, ' ')}
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusBadge(b.status)}`}>
+                        {statusLabel(b.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        value={b.status}
-                        onChange={(e) => updateStatus(b.id, e.target.value)}
-                        className="text-xs border rounded px-2 py-1"
-                      >
-                        {statusOptions.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-                      </select>
+                      {(TRANSITIONS[b.status] || []).length > 0 ? (
+                        <select
+                          value={b.status}
+                          onChange={(e) => updateStatus(b, e.target.value)}
+                          className="text-xs border rounded px-2 py-1"
+                          aria-label={`Next step for order ${b.orderNumber}`}
+                        >
+                          <option value={b.status}>{statusLabel(b.status)}</option>
+                          {TRANSITIONS[b.status].map(s => (
+                            <option key={s} value={s}>
+                              {s === 'delivered' ? 'Confirm delivered…' : s === 'collected' ? 'Confirm collected…' : s === 'cancelled' ? 'Cancel…' : `→ ${statusLabel(s)}${needsReason(b.status, s) ? '…' : ''}`}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <button onClick={() => setDialog({ kind: 'history', booking: b })} className="text-xs text-secondary hover:underline">History</button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -202,12 +212,26 @@ export default function BookingsPage() {
                   {selectedOrder.orderType === 'offline' ? <span className="px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full text-xs">Offline</span> : <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">Online</span>}
                 </div>
                 <div><span className="text-gray-400 text-xs block">Status</span>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedOrder.status] || 'bg-gray-100'}`}>{selectedOrder.status?.replace(/_/g, ' ')}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(selectedOrder.status)}`}>{statusLabel(selectedOrder.status)}</span>
                 </div>
                 <div><span className="text-gray-400 text-xs block">Order Date</span><span>{new Date(selectedOrder.createdAt || selectedOrder.created_at || Date.now()).toLocaleDateString('en-IN')}</span></div>
                 <div><span className="text-gray-400 text-xs block">Delivery Date</span><span>{selectedOrder.estimatedDeliveryDate || selectedOrder.estimated_delivery_date || '—'}</span></div>
                 <div className="col-span-2"><span className="text-gray-400 text-xs block">Store</span><span className="font-medium">{storeName(selectedOrder.locationId) || 'Not assigned'}</span></div>
+                {selectedOrder.deliveredAt && (
+                  <div className="col-span-2"><span className="text-gray-400 text-xs block">Delivered</span>
+                    <span>{formatDateTime(selectedOrder.deliveredAt)}{selectedOrder.receivedBy ? ` · received by ${selectedOrder.receivedBy}` : ''}{selectedOrder.driver ? ` · by ${selectedOrder.driver.name}` : ''}</span>
+                  </div>
+                )}
+                {selectedOrder.collectedAt && (
+                  <div className="col-span-2"><span className="text-gray-400 text-xs block">Collected</span>
+                    <span>{formatDateTime(selectedOrder.collectedAt)}{selectedOrder.collectedBy ? ` · by ${selectedOrder.collectedBy}` : ''}</span>
+                  </div>
+                )}
               </div>
+
+              <button onClick={() => setDialog({ kind: 'history', booking: selectedOrder })} className="w-full py-2 border rounded-lg text-sm text-secondary hover:bg-gray-50">
+                View order history
+              </button>
 
               {!isManager && selectedOrder.orderType !== 'offline' && (
                 <div className="flex items-center gap-2">
@@ -264,6 +288,11 @@ export default function BookingsPage() {
           </div>
         </div>
       )}
+
+      {dialog?.kind === 'deliver' && <ConfirmDeliveredDialog booking={dialog.booking} drivers={drivers} onClose={() => setDialog(null)} onDone={afterDialog} />}
+      {dialog?.kind === 'collect' && <ConfirmCollectedDialog booking={dialog.booking} onClose={() => setDialog(null)} onDone={afterDialog} />}
+      {dialog?.kind === 'reason' && <ReasonDialog booking={dialog.booking} to={dialog.to} onClose={() => setDialog(null)} onDone={afterDialog} />}
+      {dialog?.kind === 'history' && <OrderHistoryModal booking={dialog.booking} onClose={() => setDialog(null)} />}
     </div>
   );
 }

@@ -76,7 +76,7 @@ const addReview = async (req, res, next) => {
     if (bookingId) {
       const { Booking, BookingItem } = require('../models/booking.model');
       const booking = await Booking.findOne({
-        where: { id: bookingId, userId: req.user.id, status: 'delivered' },
+        where: { id: bookingId, userId: req.user.id, status: ['delivered', 'collected'] }, // handed over: delivered or collected
       });
       if (booking) {
         const bookedItem = await BookingItem.findOne({ where: { bookingId, itemId } });

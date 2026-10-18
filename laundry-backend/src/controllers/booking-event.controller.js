@@ -16,17 +16,38 @@ const FAILURE_TYPES = ['pickup_failed', 'delivery_failed'];
 const getBookingEvents = async (req, res, next) => {
   try {
     if (!isUuid(req.params.id)) return sendError(res, 404, 'Booking not found');
-    const booking = await Booking.findByPk(req.params.id, { attributes: ['id', 'orderNumber', 'status', 'locationId'] });
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [{ model: User, as: 'driver', attributes: ['id', 'name', 'phone'] }],
+    });
     if (!booking || !canAccessLocation(req, booking.locationId)) return sendError(res, 404, 'Booking not found');
 
     const events = await BookingEvent.findAll({
       where: { bookingId: booking.id },
-      include: [{ model: User, as: 'actor', attributes: ['id', 'name', 'role'] }],
+      include: [
+        { model: User, as: 'actor', attributes: ['id', 'name', 'role'] },
+        { model: User, as: 'partner', attributes: ['id', 'name', 'phone'] },
+      ],
       order: [['created_at', 'DESC']],
     });
 
     return sendSuccess(res, 200, 'Booking history fetched', {
-      booking: { id: booking.id, orderNumber: booking.orderNumber, status: booking.status },
+      booking: {
+        id: booking.id,
+        orderNumber: booking.orderNumber,
+        status: booking.status,
+        orderType: booking.orderType,
+        customerName: booking.customerName,
+        customerPhone: booking.customerPhone,
+        paymentMethod: booking.paymentMethod,
+        paymentStatus: booking.paymentStatus,
+        total: Number(booking.total),
+        createdAt: booking.get('created_at'),
+        deliveredAt: booking.deliveredAt,
+        receivedBy: booking.receivedBy,
+        collectedAt: booking.collectedAt,
+        collectedBy: booking.collectedBy,
+        driver: booking.driver ? { id: booking.driver.id, name: booking.driver.name, phone: booking.driver.phone } : null,
+      },
       events: events.map((e) => ({
         id: e.id,
         type: e.type,
@@ -37,8 +58,10 @@ const getBookingEvents = async (req, res, next) => {
         photoUrl: e.photoUrl,
         amount: e.amount === null ? null : Number(e.amount),
         itemCount: e.itemCount,
+        receiverName: e.receiverName,
         createdAt: e.created_at,
         actor: e.actor ? { id: e.actor.id, name: e.actor.name, role: e.actor.role } : null,
+        partner: e.partner ? { id: e.partner.id, name: e.partner.name, phone: e.partner.phone } : null,
       })),
     });
   } catch (error) {
