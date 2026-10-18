@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Print styles - hide everything except .print-only content */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-only,
+  .print-only * {
+    visibility: visible !important;
+    display: block !important;
+  }
+  .print-only {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .print-only table {
+    display: table !important;
+  }
+  .print-only thead {
+    display: table-header-group !important;
+  }
+  .print-only tbody {
+    display: table-row-group !important;
+  }
+  .print-only tr {
+    display: table-row !important;
+  }
+  .print-only th,
+  .print-only td {
+    display: table-cell !important;
+  }
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+}

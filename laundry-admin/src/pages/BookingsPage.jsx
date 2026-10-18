@@ -1,0 +1,269 @@
+import { useState, useEffect } from 'react';
+import api from '../api/axios';
+import toast from 'react-hot-toast';
+import { useLocations } from '../context/LocationContext';
+
+const statusColors = {
+  pending: 'bg-yellow-100 text-yellow-700',
+  confirmed: 'bg-blue-100 text-blue-700',
+  pickup_scheduled: 'bg-indigo-100 text-indigo-700',
+  picked_up: 'bg-indigo-100 text-indigo-700',
+  in_process: 'bg-purple-100 text-purple-700',
+  ready: 'bg-teal-100 text-teal-700',
+  out_for_delivery: 'bg-orange-100 text-orange-700',
+  delivered: 'bg-green-100 text-green-700',
+  cancelled: 'bg-red-100 text-red-700',
+};
+
+const statusOptions = ['pending', 'confirmed', 'pickup_scheduled', 'picked_up', 'in_process', 'ready', 'out_for_delivery', 'delivered', 'cancelled'];
+
+export default function BookingsPage() {
+  const { locations, isManager } = useLocations();
+  const storeName = (id) => locations.find(l => l.id === id)?.name;
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState(''); // '', 'online', 'offline'
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const fetchBookings = async () => {
+    setLoading(true);
+    try {
+      const params = { page, limit: 15 };
+      if (filter) params.status = filter;
+
+      if (typeFilter === 'offline') {
+        // Fetch only offline orders
+        const res = await api.get('/admin/pos/orders', { params: { ...params, status: filter || undefined } });
+        setBookings(res.data?.orders || []);
+        setTotalPages(res.data?.totalPages || 1);
+      } else if (typeFilter === 'online') {
+        // Fetch only online orders
+        const res = await api.get('/bookings', { params });
+        const onlineOnly = (res.data?.bookings || []).filter(b => b.orderType !== 'offline');
+        setBookings(onlineOnly);
+        setTotalPages(res.data?.totalPages || 1);
+      } else {
+        // All - fetch both and merge
+        const [onlineRes, offlineRes] = await Promise.all([
+          api.get('/bookings', { params }).catch(() => ({ data: { bookings: [] } })),
+          api.get('/admin/pos/orders', { params: { limit: 50 } }).catch(() => ({ data: { orders: [] } })),
+        ]);
+        const onlineOrders = (onlineRes.data?.bookings || []).filter(b => b.orderType !== 'offline');
+        const offlineOrders = offlineRes.data?.orders || [];
+        const all = [...onlineOrders, ...offlineOrders].sort((a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0));
+        setBookings(all.slice(0, 20));
+        setTotalPages(1);
+      }
+    } catch (err) {
+      // No error toast on empty results
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchBookings(); }, [page, filter, typeFilter]);
+
+  const updateStatus = async (id, status) => {
+    try {
+      await api.patch(`/bookings/${id}/status`, { status });
+      toast.success('Status updated');
+      fetchBookings();
+    } catch (err) {
+      toast.error(err.message || 'Failed to update status');
+    }
+  };
+
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [moveTo, setMoveTo] = useState('');
+  const viewOrder = (order) => { setSelectedOrder(order); setMoveTo(''); };
+
+  // Admins can hand an online order to another store (store bills stay where they were billed)
+  const moveOrder = async () => {
+    try {
+      const res = await api.patch(`/admin/bookings/${selectedOrder.id}/location`, { locationId: moveTo });
+      toast.success(res.message || 'Order moved');
+      setSelectedOrder({ ...selectedOrder, locationId: res.data.locationId, driverId: res.data.driverId });
+      setMoveTo('');
+      fetchBookings();
+    } catch (err) {
+      toast.error(err.message || 'Failed to move order');
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Orders</h2>
+        <div className="flex gap-2">
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            {[{ value: '', label: 'All' }, { value: 'online', label: 'Online' }, { value: 'offline', label: 'Offline' }].map(t => (
+              <button key={t.value} onClick={() => { setTypeFilter(t.value); setPage(1); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${typeFilter === t.value ? 'bg-white shadow-sm text-secondary' : 'text-gray-500'}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <select value={filter} onChange={(e) => { setFilter(e.target.value); setPage(1); }} className="px-3 py-2 border rounded-lg text-sm">
+            <option value="">All Status</option>
+            {statusOptions.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-600 uppercase text-xs">
+              <tr>
+                <th className="px-4 py-3 text-left">Order #</th>
+                <th className="px-4 py-3 text-left">Customer</th>
+                <th className="px-4 py-3 text-left hidden sm:table-cell">Type</th>
+                {!isManager && <th className="px-4 py-3 text-left hidden md:table-cell">Store</th>}
+                <th className="px-4 py-3 text-left hidden md:table-cell">Order Date</th>
+                <th className="px-4 py-3 text-left hidden md:table-cell">Delivery Date</th>
+                <th className="px-4 py-3 text-left hidden lg:table-cell">Items</th>
+                <th className="px-4 py-3 text-left">Total</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {loading ? (
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">Loading...</td></tr>
+              ) : bookings.length === 0 ? (
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">No orders found</td></tr>
+              ) : (
+                bookings.map((b) => (
+                  <tr key={b.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-mono font-medium text-xs">{b.orderNumber}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => viewOrder(b)} className="text-left hover:underline">
+                        <span className="font-medium text-xs text-blue-600">{b.customerName || '—'}</span>
+                        {b.customerPhone && <p className="text-[10px] text-gray-400">{b.customerPhone}</p>}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 hidden sm:table-cell">
+                      {b.orderType === 'offline' ? (
+                        <span className="px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full text-xs">Offline</span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">Online</span>
+                      )}
+                    </td>
+                    {!isManager && <td className="px-4 py-3 hidden md:table-cell text-xs text-gray-600">{storeName(b.locationId) || <span className="text-gray-300">—</span>}</td>}
+                    <td className="px-4 py-3 hidden md:table-cell text-xs text-gray-500">{new Date(b.createdAt || b.created_at || b.pickupDate || Date.now()).toLocaleDateString('en-IN')}</td>
+                    <td className="px-4 py-3 hidden md:table-cell text-xs text-gray-500">{b.estimatedDeliveryDate || b.estimated_delivery_date || '—'}</td>
+                    <td className="px-4 py-3 hidden lg:table-cell">{b.items?.length || 0}</td>
+                    <td className="px-4 py-3 font-medium">₹{b.total}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[b.status] || 'bg-gray-100'}`}>
+                        {b.status?.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={b.status}
+                        onChange={(e) => updateStatus(b.id, e.target.value)}
+                        className="text-xs border rounded px-2 py-1"
+                      >
+                        {statusOptions.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-3 border-t">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Previous</button>
+          <span className="text-sm text-gray-500">Page {page} of {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 text-sm border rounded disabled:opacity-50">Next</button>
+        </div>
+      </div>
+
+      {/* Order Detail Modal */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setSelectedOrder(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white rounded-t-2xl">
+              <h3 className="font-bold text-lg">Order Details</h3>
+              <button onClick={() => setSelectedOrder(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Order Info */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><span className="text-gray-400 text-xs block">Order #</span><span className="font-mono font-medium">{selectedOrder.orderNumber}</span></div>
+                <div><span className="text-gray-400 text-xs block">Invoice</span><span className="font-mono">{selectedOrder.invoiceNumber || '—'}</span></div>
+                <div><span className="text-gray-400 text-xs block">Type</span>
+                  {selectedOrder.orderType === 'offline' ? <span className="px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full text-xs">Offline</span> : <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full text-xs">Online</span>}
+                </div>
+                <div><span className="text-gray-400 text-xs block">Status</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedOrder.status] || 'bg-gray-100'}`}>{selectedOrder.status?.replace(/_/g, ' ')}</span>
+                </div>
+                <div><span className="text-gray-400 text-xs block">Order Date</span><span>{new Date(selectedOrder.createdAt || selectedOrder.created_at || Date.now()).toLocaleDateString('en-IN')}</span></div>
+                <div><span className="text-gray-400 text-xs block">Delivery Date</span><span>{selectedOrder.estimatedDeliveryDate || selectedOrder.estimated_delivery_date || '—'}</span></div>
+                <div className="col-span-2"><span className="text-gray-400 text-xs block">Store</span><span className="font-medium">{storeName(selectedOrder.locationId) || 'Not assigned'}</span></div>
+              </div>
+
+              {!isManager && selectedOrder.orderType !== 'offline' && (
+                <div className="flex items-center gap-2">
+                  <select value={moveTo} onChange={(e) => setMoveTo(e.target.value)} className="flex-1 px-3 py-2 border rounded-lg text-sm bg-white" aria-label="Move to store">
+                    <option value="">Move to another store…</option>
+                    {locations.filter(l => l.isActive && l.id !== selectedOrder.locationId).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                  <button onClick={moveOrder} disabled={!moveTo} className="px-3 py-2 bg-secondary text-white rounded-lg text-sm font-medium disabled:opacity-40">Move</button>
+                </div>
+              )}
+
+              {/* Customer */}
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-1">Customer</p>
+                <p className="font-semibold">{selectedOrder.customerName || '—'}</p>
+                <p className="text-sm text-gray-500">{selectedOrder.customerPhone || '—'}</p>
+                {selectedOrder.customerNote && <p className="text-xs text-gray-400 mt-1 italic">Note: {selectedOrder.customerNote}</p>}
+              </div>
+
+              {/* Items */}
+              {selectedOrder.items?.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-2">Items ({selectedOrder.items.length})</p>
+                  <div className="space-y-2">
+                    {selectedOrder.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm">
+                        <div>
+                          <span className="font-medium">{item.name}</span>
+                          {item.garmentColor && <span className="ml-1 text-xs text-gray-400">({item.garmentColor})</span>}
+                          {item.itemNote && <p className="text-xs text-orange-500">⚠ {item.itemNote}</p>}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs text-gray-500">×{item.quantity}</span>
+                          <span className="ml-2 font-medium">₹{item.lineTotal || item.line_total}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Payment */}
+              <div className="border-t pt-3 space-y-1 text-sm">
+                <div className="flex justify-between"><span className="text-gray-500">Subtotal</span><span>₹{selectedOrder.subtotal}</span></div>
+                {parseFloat(selectedOrder.discount) > 0 && <div className="flex justify-between"><span className="text-gray-500">Discount</span><span>-₹{selectedOrder.discount}</span></div>}
+                {parseFloat(selectedOrder.gstAmount || selectedOrder.gst_amount || 0) > 0 && <div className="flex justify-between"><span className="text-gray-500">GST ({selectedOrder.gstRate || selectedOrder.gst_rate}%)</span><span>₹{selectedOrder.gstAmount || selectedOrder.gst_amount}</span></div>}
+                <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total</span><span>₹{selectedOrder.total}</span></div>
+                <div className="flex justify-between text-xs text-gray-400 pt-1">
+                  <span>Payment: {selectedOrder.paymentMethodDetail || selectedOrder.payment_method_detail || selectedOrder.paymentMethod || '—'}</span>
+                  <span>{selectedOrder.paymentStatus === 'paid' || selectedOrder.payment_status === 'paid' ? '✓ Paid' : '⏳ Pending'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
