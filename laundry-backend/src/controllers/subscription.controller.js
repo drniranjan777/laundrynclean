@@ -1,10 +1,20 @@
 const { SubscriptionPlan, UserSubscription } = require('../models/subscription.model');
 const { sendSuccess, sendError } = require('../utils/response');
-const { Op } = require('sequelize');
+const { sequelize } = require('../config/db');
+const { currentSubscription } = require('../services/subscription.service');
+const { debitWallet } = require('./wallet.controller');
+
+const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/** Plans the customer has already had (a plan's free trial is given once). */
+const plansUsed = async (userId, transaction) => {
+  const rows = await UserSubscription.findAll({ where: { userId }, attributes: ['planId'], transaction });
+  return new Set(rows.map(r => r.planId));
+};
 
 /**
  * GET /api/v1/subscriptions/plans
- * Get all available subscription plans
+ * All available plans, the customer's current plan and whether each plan's free trial is still available
  */
 const getPlans = async (req, res, next) => {
   try {
@@ -13,22 +23,12 @@ const getPlans = async (req, res, next) => {
       order: [['sortOrder', 'ASC'], ['price', 'ASC']],
     });
 
-    // Check if user has active subscription
-    let activePlanId = null;
-    if (req.user) {
-      const activeSub = await UserSubscription.findOne({
-        where: {
-          userId: req.user.id,
-          status: { [Op.in]: ['active', 'trial'] },
-          endDate: { [Op.gt]: new Date() },
-        },
-      });
-      if (activeSub) activePlanId = activeSub.planId;
-    }
+    const current = await currentSubscription(req.user.id);
+    const used = await plansUsed(req.user.id);
 
     return sendSuccess(res, 200, 'Plans fetched', {
-      plans,
-      activePlanId,
+      plans: plans.map(p => ({ ...p.toJSON(), trialAvailable: p.trialDays > 0 && !used.has(p.id) })),
+      activePlanId: current ? current.planId : null,
     });
   } catch (error) {
     next(error);
@@ -37,24 +37,15 @@ const getPlans = async (req, res, next) => {
 
 /**
  * GET /api/v1/subscriptions/my-subscription
- * Get user's current active subscription
+ * The customer's current plan. A cancelled plan is still returned (status 'cancelled') until its end date,
+ * because its benefits last until then.
  */
 const getMySubscription = async (req, res, next) => {
   try {
-    const subscription = await UserSubscription.findOne({
-      where: {
-        userId: req.user.id,
-        status: { [Op.in]: ['active', 'trial'] },
-        endDate: { [Op.gt]: new Date() },
-      },
-      include: [{ model: SubscriptionPlan, as: 'plan' }],
-      order: [['created_at', 'DESC']],
-    });
-
+    const subscription = await currentSubscription(req.user.id);
     if (!subscription) {
       return sendSuccess(res, 200, 'No active subscription', { subscription: null });
     }
-
     return sendSuccess(res, 200, 'Subscription fetched', { subscription });
   } catch (error) {
     next(error);
@@ -63,40 +54,38 @@ const getMySubscription = async (req, res, next) => {
 
 /**
  * POST /api/v1/subscriptions/subscribe
- * Subscribe to a plan
+ * Start a plan. A plan with trial days starts as a free trial the first time the customer takes it;
+ * otherwise its price is paid from the wallet (Add money first if the balance is short).
  */
 const subscribe = async (req, res, next) => {
+  const t = await sequelize.transaction();
   try {
-    const { planId, paymentMethod } = req.body;
+    const { planId } = req.body;
 
-    const plan = await SubscriptionPlan.findByPk(planId);
+    const plan = await SubscriptionPlan.findByPk(planId, { transaction: t });
     if (!plan || !plan.isActive) {
+      await t.rollback();
       return sendError(res, 404, 'Plan not found or inactive');
     }
 
-    // Check for existing active subscription
-    const existingSub = await UserSubscription.findOne({
-      where: {
-        userId: req.user.id,
-        status: { [Op.in]: ['active', 'trial'] },
-        endDate: { [Op.gt]: new Date() },
-      },
-    });
-
-    if (existingSub) {
-      return sendError(res, 409, 'You already have an active subscription. Cancel it first to switch plans.');
+    const existing = await currentSubscription(req.user.id, t);
+    if (existing) {
+      await t.rollback();
+      const name = existing.plan ? existing.plan.name : 'current';
+      return sendError(res, 409, existing.status === 'cancelled'
+        ? `Your ${name} plan runs until ${formatDate(existing.endDate)}. You can pick a new plan after that.`
+        : `You already have the ${name} plan. Cancel it first to switch plans.`);
     }
 
-    // Calculate dates
     const startDate = new Date();
-    let endDate = new Date();
-    let trialEndsAt = null;
+    const used = await plansUsed(req.user.id, t);
+    const isTrial = plan.trialDays > 0 && !used.has(plan.id);
+    const price = parseFloat(plan.price);
 
-    if (plan.trialDays > 0) {
-      trialEndsAt = new Date(startDate.getTime() + plan.trialDays * 24 * 60 * 60 * 1000);
-    }
-
-    if (plan.durationType === 'month') {
+    let endDate = new Date(startDate);
+    if (isTrial) {
+      endDate.setDate(endDate.getDate() + plan.trialDays);
+    } else if (plan.durationType === 'month') {
       endDate.setMonth(endDate.getMonth() + 1);
     } else if (plan.durationType === 'year') {
       endDate.setFullYear(endDate.getFullYear() + 1);
@@ -107,39 +96,53 @@ const subscribe = async (req, res, next) => {
     const subscription = await UserSubscription.create({
       userId: req.user.id,
       planId,
-      status: plan.trialDays > 0 ? 'trial' : 'active',
+      status: isTrial ? 'trial' : 'active',
       startDate,
       endDate,
-      trialEndsAt,
-      amountPaid: parseFloat(plan.price),
-      paymentMethod: paymentMethod || 'wallet',
-      autoRenew: true,
-    });
+      trialEndsAt: isTrial ? endDate : null,
+      amountPaid: isTrial ? 0 : price,
+      paymentMethod: isTrial ? 'trial' : 'wallet',
+      autoRenew: false, // there is no automatic billing; the customer renews from the app
+    }, { transaction: t });
 
-    return sendSuccess(res, 201, 'Subscription activated', {
-      subscription,
-      plan,
+    let walletBalance = null;
+    if (!isTrial && price > 0) {
+      try {
+        walletBalance = await debitWallet(req.user.id, price, subscription.id, t, {
+          description: `${plan.name} plan subscription`,
+          referenceType: 'subscription',
+        });
+      } catch (error) {
+        if (error.shortfall === undefined) throw error;
+        await t.rollback();
+        return sendError(res, 400, `Not enough wallet balance. Add ₹${error.shortfall} to your wallet to get the ${plan.name} plan.`, {
+          shortfall: error.shortfall,
+        });
+      }
+    }
+
+    await t.commit();
+
+    return sendSuccess(res, 201, isTrial
+      ? `Your ${plan.trialDays}-day free trial of ${plan.name} has started`
+      : `${plan.name} plan activated`, {
+      subscription: { ...subscription.toJSON(), plan },
+      walletBalance,
     });
   } catch (error) {
+    await t.rollback();
     next(error);
   }
 };
 
 /**
  * POST /api/v1/subscriptions/cancel
- * Cancel current subscription
+ * Cancel the current plan. Nothing is refunded; the plan and its benefits stay until the end date.
  */
 const cancelSubscription = async (req, res, next) => {
   try {
-    const subscription = await UserSubscription.findOne({
-      where: {
-        userId: req.user.id,
-        status: { [Op.in]: ['active', 'trial'] },
-        endDate: { [Op.gt]: new Date() },
-      },
-    });
-
-    if (!subscription) {
+    const subscription = await currentSubscription(req.user.id);
+    if (!subscription || subscription.status === 'cancelled') {
       return sendError(res, 404, 'No active subscription found');
     }
 
@@ -148,7 +151,7 @@ const cancelSubscription = async (req, res, next) => {
     subscription.autoRenew = false;
     await subscription.save();
 
-    return sendSuccess(res, 200, 'Subscription cancelled. It remains active until the end date.', {
+    return sendSuccess(res, 200, `Subscription cancelled. Your benefits stay until ${formatDate(subscription.endDate)}.`, {
       endDate: subscription.endDate,
     });
   } catch (error) {

@@ -217,14 +217,15 @@ const addMoney = async (req, res, next) => {
 
 /**
  * POST /api/v1/wallet/debit (internal use - called by order service)
- * Debit wallet for order payment
+ * Debit wallet for order payment (or, with `description` / `referenceType`, for a subscription)
  */
-const debitWallet = async (userId, amount, orderId, transaction) => {
+const debitWallet = async (userId, amount, orderId, transaction, { description = 'Payment for order', referenceType = 'order_payment' } = {}) => {
   // Lock the row so two concurrent orders can't spend the same balance
   const wallet = await Wallet.findOne({ where: { userId }, lock: transaction.LOCK.UPDATE, transaction });
   if (!wallet || parseFloat(wallet.balance) < amount) {
     const error = new Error('Insufficient wallet balance');
     error.statusCode = 400;
+    error.shortfall = Math.round((amount - parseFloat(wallet?.balance || 0)) * 100) / 100;
     throw error;
   }
 
@@ -239,8 +240,8 @@ const debitWallet = async (userId, amount, orderId, transaction) => {
     type: 'debit',
     amount,
     balanceAfter: newBalance,
-    description: `Payment for order`,
-    referenceType: 'order_payment',
+    description,
+    referenceType,
     referenceId: orderId,
   }, { transaction });
 

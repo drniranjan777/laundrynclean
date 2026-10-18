@@ -12,7 +12,8 @@ const { findLocationByPincode, getPriceOverrides, priceAt, getSlotCapacities } =
 const { locationFilter, canAccessLocation } = require('../utils/location-scope');
 const { Location } = require('../models/location.model');
 const paymentService = require('../services/payment.service');
-const { failureSummaries, recordStaffEvent } = require('./booking-event.controller');
+const { failureSummaries, recordStaffEvent, customerTimeline } = require('./booking-event.controller');
+const { memberBenefits, memberDiscountOn } = require('../services/subscription.service');
 
 const DELIVERY_FEE = 50;
 const FREE_DELIVERY_THRESHOLD = 250;
@@ -192,9 +193,10 @@ const confirmBooking = async (req, res, next) => {
       };
     });
 
-    // Delivery fee
+    // Delivery fee, waived for customers whose plan has free delivery
+    const membership = await memberBenefits(req.user.id, t);
     let deliveryFee = 0;
-    if (subtotal < FREE_DELIVERY_THRESHOLD || totalQuantity < 10) {
+    if ((subtotal < FREE_DELIVERY_THRESHOLD || totalQuantity < 10) && !membership?.freeDelivery) {
       deliveryFee = DELIVERY_FEE;
     }
 
@@ -212,6 +214,12 @@ const confirmBooking = async (req, res, next) => {
       discount = result.discount;
       appliedPromoId = result.promo.id;
     }
+    const promoDiscount = discount;
+
+    // The plan's member discount is added to any promo discount (never more than the subtotal).
+    // Both are kept in the booking's one `discount` column, so totals add up everywhere it's shown.
+    const memberDiscount = memberDiscountOn(subtotal, membership);
+    discount = Math.min(subtotal, Math.round((promoDiscount + memberDiscount) * 100) / 100);
 
     const total = Math.round((subtotal - discount + deliveryFee) * 100) / 100;
 
@@ -258,7 +266,7 @@ const confirmBooking = async (req, res, next) => {
 
     // If wallet payment, debit wallet
     if (paymentMethod === 'wallet') {
-      await debitWallet(req.user.id, total, booking.id, t);
+      await debitWallet(req.user.id, total, booking.id, t, { description: `Payment for order #${booking.orderNumber}` });
     }
 
     // Promo usage is counted now for wallet/COD orders, or once an online payment is verified
@@ -288,6 +296,9 @@ const confirmBooking = async (req, res, next) => {
         timeSlot: timeSlot.label,
         subtotal,
         discount,
+        promoDiscount,
+        memberDiscount,
+        membership,
         deliveryFee,
         total: parseFloat(booking.total),
         paymentStatus: booking.paymentStatus,
@@ -419,12 +430,15 @@ const getBookingById = async (req, res, next) => {
       include: [
         { model: BookingItem, as: 'items' },
         { model: TimeSlot, as: 'timeSlot', attributes: ['label'] },
-        LOCATION_SUMMARY,
+        { model: Address, as: 'address', attributes: ['fullName', 'phone', 'addressLine', 'city', 'state', 'pincode', 'label'] },
+        { ...LOCATION_SUMMARY, attributes: ['id', 'name', 'code', 'phone'] },
       ],
     });
 
     if (!booking || !canAccessLocation(req, booking.locationId)) return sendError(res, 404, 'Booking not found');
-    return sendSuccess(res, 200, 'Booking fetched', booking);
+    // When each step happened (status changes recorded by staff and the driver app)
+    const timeline = await customerTimeline(booking.id);
+    return sendSuccess(res, 200, 'Booking fetched', { ...booking.toJSON(), timeline });
   } catch (error) {
     next(error);
   }

@@ -68,4 +68,19 @@ const failureSummaries = async (bookingIds) => {
 /** Records a staff action on an order (inside the caller's transaction) */
 const recordStaffEvent = (fields, transaction) => BookingEvent.create(fields, { transaction });
 
-module.exports = { getBookingEvents, failureSummaries, recordStaffEvent };
+/**
+ * What the customer sees of an order's history, oldest first: each status the order reached and when, plus
+ * failed pickup / delivery attempts with their reason. Internal notes, photos and who did what are left out.
+ */
+const customerTimeline = async (bookingId) => {
+  const events = await BookingEvent.findAll({
+    where: { bookingId, [Op.or]: [{ toStatus: { [Op.ne]: null } }, { type: FAILURE_TYPES }] },
+    attributes: ['type', 'toStatus', 'reason', 'created_at'],
+    order: [['created_at', 'ASC']],
+  });
+  return events
+    .filter((e) => FAILURE_TYPES.includes(e.type) || e.type === 'status' || e.type === 'driver_assigned')
+    .map((e) => ({ type: e.type, status: e.toStatus, reason: FAILURE_TYPES.includes(e.type) ? e.reason : null, at: e.created_at }));
+};
+
+module.exports = { getBookingEvents, failureSummaries, recordStaffEvent, customerTimeline };

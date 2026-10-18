@@ -3,6 +3,7 @@ const { Item } = require('../models/category.model');
 const Address = require('../models/address.model');
 const { Location } = require('../models/location.model');
 const { sendSuccess, sendError } = require('../utils/response');
+const { memberBenefits, memberDiscountOn } = require('../services/subscription.service');
 const { findLocationByPincode, getPriceOverrides, priceAt } = require('../services/location.service');
 const { isUuid } = require('../utils/location-scope');
 
@@ -66,13 +67,16 @@ const getCart = async (req, res, next) => {
       };
     });
 
-    // Delivery fee logic: ₹50 if order < ₹250 OR fewer than 10 items
+    // Delivery fee logic: ₹50 if order < ₹250 OR fewer than 10 items, unless the customer's plan has free delivery
+    const membership = await memberBenefits(req.user.id);
     let deliveryFee = 0;
-    if (subtotal < FREE_DELIVERY_THRESHOLD || totalItems < MIN_ITEMS_FREE_DELIVERY) {
+    if ((subtotal < FREE_DELIVERY_THRESHOLD || totalItems < MIN_ITEMS_FREE_DELIVERY) && !membership?.freeDelivery) {
       deliveryFee = DELIVERY_FEE;
     }
+    // Members get their plan's discount on every order (promo codes apply on top, at checkout)
+    const memberDiscount = memberDiscountOn(subtotal, membership);
 
-    const total = subtotal + deliveryFee;
+    const total = subtotal - memberDiscount + deliveryFee;
 
     return sendSuccess(res, 200, 'Cart fetched', {
       location: location ? { id: location.id, name: location.name, code: location.code } : null,
@@ -81,6 +85,8 @@ const getCart = async (req, res, next) => {
       totalQuantity: totalItems,
       subtotal: Math.round(subtotal * 100) / 100,
       deliveryFee,
+      memberDiscount,
+      membership,
       freeDeliveryThreshold: FREE_DELIVERY_THRESHOLD,
       minItemsFreeDelivery: MIN_ITEMS_FREE_DELIVERY,
       total: Math.round(total * 100) / 100,

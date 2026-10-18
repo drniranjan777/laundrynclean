@@ -113,7 +113,7 @@ const WalletTransaction = sequelize.define('WalletTransaction', {
     allowNull: true,
   },
   referenceType: {
-    type: DataTypes.ENUM('recharge', 'package_bonus', 'order_payment', 'refund', 'admin_credit'),
+    type: DataTypes.ENUM('recharge', 'package_bonus', 'order_payment', 'refund', 'admin_credit', 'subscription'),
     allowNull: false,
     field: 'reference_type',
   },
