@@ -205,14 +205,15 @@ class _Totals extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    Widget row(String label, String value, {bool bold = false}) => Padding(
+    Widget row(String label, String value, {bool bold = false, Color? color}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(children: [
-            Text(label, style: bold ? text.titleMedium?.copyWith(fontWeight: FontWeight.w700) : text.bodyLarge),
+            Text(label, style: (bold ? text.titleMedium?.copyWith(fontWeight: FontWeight.w700) : text.bodyLarge)?.copyWith(color: color)),
             const Spacer(),
-            Text(value, style: bold ? text.titleMedium?.copyWith(fontWeight: FontWeight.w700) : text.bodyLarge),
+            Text(value, style: (bold ? text.titleMedium?.copyWith(fontWeight: FontWeight.w700) : text.bodyLarge)?.copyWith(color: color)),
           ]),
         );
+    final member = cart.membership;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       decoration: const BoxDecoration(
@@ -225,7 +226,12 @@ class _Totals extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             row('Subtotal (${cart.totalQuantity} item${cart.totalQuantity == 1 ? '' : 's'})', rupees(cart.subtotal)),
-            row('Pickup & delivery', cart.deliveryFee == 0 ? 'Free' : rupees(cart.deliveryFee)),
+            row(
+              'Pickup & delivery${cart.deliveryFee == 0 && (member?.freeDelivery ?? false) ? ' (member)' : ''}',
+              cart.deliveryFee == 0 ? 'Free' : rupees(cart.deliveryFee),
+            ),
+            if (cart.memberDiscount > 0)
+              row('${member?.planName ?? 'Member'} discount', '- ${rupees(cart.memberDiscount)}', color: const Color(0xFF16A34A)),
             const Divider(height: 18),
             row('Total', rupees(cart.total), bold: true),
             Text('GST and offers are added when you book.', style: text.bodySmall?.copyWith(color: AppColors.textMuted)),

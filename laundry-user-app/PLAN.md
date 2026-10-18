@@ -136,7 +136,26 @@ Each phase ends with a build that can be installed on a phone and demoed. The ti
 - Order placed screen with the order number.
 - **Done when:** a user can book a pickup end to end with COD and with Razorpay (test mode).
 
-### Phase 4: Orders, tracking & notifications (≈ 1.5 weeks)
+### Phase 4: Orders, tracking & notifications (≈ 1.5 weeks) — orders done, notifications open
+
+> **Done (2026-10-18), account features.** All four "Soon" items on the Account tab now work, styled after the `Screens/` board in the NClean colours.
+> - **My orders.** Ongoing / Completed / Cancelled tabs. Each card shows the order number, date, items, total and a status chip, plus the pickup slot (or the expected delivery once it's picked up).
+> - **Order details.**
+>   - A status header and a tracker. The tracker shows each step with when it happened, plus any missed pickup / delivery attempt with its reason.
+>   - Items, pickup details (slot, expected delivery, address, store, instructions), and the bill and payment.
+>   - **Cancel** (pending / confirmed; a wallet or online payment goes back to the wallet), **Reorder** (puts the catalogue items back in the cart), and **Help** (call the store or support, WhatsApp, FAQs).
+>   - The order-placed screen has a **Track order** button.
+> - **Wallet.**
+>   - Balance with total added and total spent, recharge offers, and paged history (with a title, description and the balance after each line).
+>   - **Add money:** an amount with quick picks, or a bonus package, paid with Razorpay, then a success sheet.
+>   - A wallet balance chip on Home. At checkout, **Add money** appears when the balance is too low to pay with the wallet.
+> - **Membership.**
+>   - The current plan (status, end date, days left, benefits, cancel) and the plans, with Activated and free-trial badges.
+>   - Plans are paid from the wallet. If the balance is short, the app offers to add exactly what's missing.
+>   - Member discount and free delivery show in the cart and the checkout bill.
+> - **Help & support:** call / WhatsApp / email support (from app-config), searchable FAQs by topic, and About / Terms / Privacy.
+> - **Account:** profile card, quick tiles (wallet, orders in progress, membership), grouped menus with live subtitles, sign out.
+> - Checked on an Android emulator against the dev backend, with a test customer: every screen; a wallet subscription purchase; member pricing at checkout; cancel; reorder. Wallet top-up stops at Razorpay with the dev keys (B13). `flutter analyze` is clean and 30 tests pass.
 - **My Orders:** Active and Past tabs (`GET /bookings`).
 - **Order detail:** items, slot, address, payment, and a status timeline.
   - Statuses: Pending → Confirmed → Pickup scheduled → Picked up → In process → Ready → Out for delivery → Delivered.
@@ -148,14 +167,14 @@ Each phase ends with a build that can be installed on a phone and demoed. The ti
 - Invoice view or download after delivery. Needs **B6**.
 - **Done when:** a user can follow an order from booking to delivery and gets a push at each step.
 
-### Phase 5: Wallet, subscriptions & offers (≈ 1 week)
+### Phase 5: Wallet, subscriptions & offers (≈ 1 week) — wallet and subscriptions done (see Phase 4 note); offers list open
 - **Wallet:** balance and transactions (`/wallet`, `/wallet/transactions`).
 - **Add money** with packages (`/wallet/packages`) through Razorpay (`/wallet/create-order` → `/wallet/add-money`).
 - **Subscriptions:** plans, subscribe, my subscription, history and cancel (`/subscriptions/*`).
 - Offers / promo codes list.
 - **Done when:** wallet top-up and subscription purchase work in Razorpay test mode.
 
-### Phase 6: Profile, reviews, help & content (≈ 1 week)
+### Phase 6: Profile, reviews, help & content (≈ 1 week) — help & content done; profile edit, reviews and delete account open
 - **Profile:** edit name and email (`PUT /profile`). A profile photo would need an upload endpoint, which the backend doesn't have yet, so it's left out of v1.
 - **Reviews:** rate items after delivery (`POST /reviews`) and list my reviews.
 - **Help:**
@@ -186,13 +205,14 @@ These are changes in `laundry-backend`. The rest of the API the app needs alread
 | B2 | **Firebase push.** `sendPushNotification` is a TODO. Send a push on every order status change and on offers. | Phase 4 |
 | B3 | **Notifications API:** `GET /notifications`, mark as read. The model and service exist, but there's no route. | Phase 4 |
 | B4 | ✅ **Done (2026-10-18). Customer-only login on `/auth`.** A staff number (driver, branch manager or admin) now gets a 403 *"This number belongs to a staff account and can't be used in the customer app."* on send-otp and verify-otp, and no OTP is sent. New numbers are still registered as customers. | Phase 1 |
-| B5 | **Order status history** (a table of status + timestamp) so the timeline can show when each step happened | Phase 4 |
+| B5 | ✅ **Done (2026-10-18).** `GET /bookings/:id` returns a `timeline`, oldest first, built from `booking_events`: statuses reached and failed attempts with their reason, without internal notes. It also returns the pickup `address` and the store phone. The order's own creation time is its "confirmed" step. | Phase 4 |
 | B6 | **Customer invoice** (PDF or HTML link) for delivered orders | Phase 4 |
 | B7 | **Delete account** endpoint (anonymise the user, keep orders for accounting) | Phase 6 |
 | B8 | ✅ **Fixed (2026-10-18).** `/location/save` no longer writes addresses. It returns `isServiceable`, `location` and the default `addressId`. Original issue: **`POST /location/save` was broken.** <ul><li>For a customer with no default address it creates an address without the required `fullName`, so it fails.</li><li>For a customer who has one, it overwrites the pincode of their real default address.</li></ul>Fix it (or drop it); the app doesn't call it today. | Before Phase 3 |
 | B10 | ✅ **Done (2026-10-18).** `GET /cart` and `GET /cart/favorites` accept `?locationId=`, so a new customer with no address yet sees their store's prices in the cart, the same as in the catalogue. Cart and favourite items now include `icon` and `categoryId`, and favourites are priced for the store (with `isAvailable`). | Phase 2 |
 | B11 | **Retry payment for an unpaid online order.** If Razorpay fails or is cancelled after confirm, the booking stays `pending` / unpaid, and there's no endpoint to create a new Razorpay order for it. Add `POST /bookings/:id/pay` (new Razorpay order for the same total), or let the customer switch to COD. | Before launch |
 | B12 | **Soft-delete addresses.** An address used by any order can't be deleted (409 with a clear message, added 2026-10-18). Add `deleted_at` so customers can hide old addresses while orders keep theirs. | Later |
+| B14 | ✅ **Done (2026-10-18). Subscriptions are paid, and their benefits apply.**<ul><li>`POST /subscriptions/subscribe` used to activate any plan for free. Now it debits the wallet (400 with the amount to add when the balance is short).</li><li>A plan's trial days are a free trial, given once per plan.</li><li>A cancelled plan stays current, with its benefits, until its end date (`my-subscription` returns it as `cancelled`).</li><li>Members get free delivery and their plan's % off in `GET /cart` (`memberDiscount`, `membership`) and at `/bookings/confirm` (added to any promo discount in the booking's `discount`).</li><li>Wallet history gets a `subscription` entry type (migration 026), and wallet order payments name the order.</li></ul> | Phase 5 |
 | B13 | **Razorpay keys for dev / test.** The keys in the dev `.env` are rejected by Razorpay. Add test-mode keys to exercise UPI / Card end to end on a phone. | Before Phase 7 |
 | B9 | **`POST /location/check-coordinates` is a placeholder** (it always says "not serviceable"). Wire it to a geocoding API so web and devices without a geocoder can use "current location". | Optional |
 

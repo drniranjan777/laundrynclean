@@ -72,7 +72,15 @@ class OrderPlacedScreen extends StatelessWidget {
               Text('Our delivery partner will come in your time slot. Keep your clothes ready.',
                   textAlign: TextAlign.center, style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
               const SizedBox(height: 28),
-              FilledButton(onPressed: () => context.go(Routes.home), child: const Text('Back to home')),
+              FilledButton(
+                onPressed: () {
+                  context.go(Routes.home);
+                  context.push('/orders/${order.id}');
+                },
+                child: const Text('Track order'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton(onPressed: () => context.go(Routes.home), child: const Text('Back to home')),
             ],
           ),
         ),

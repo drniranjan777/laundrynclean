@@ -48,7 +48,11 @@ lib/
     cart/        server cart (priced for the chosen store), favourites, cart bar
     address/     saved addresses (list / picker) and the address form (pin code must be served)
     checkout/    schedule pickup: address, date & per-store slot, offer code, instructions, payment (COD / wallet / Razorpay), disclaimer, order placed
-    account/     account tab (orders / wallet / help arrive in later phases)
+    account/     account tab: profile, quick tiles (wallet, orders in progress, membership), menus
+    orders/      my orders (tabs), order details with tracker, cancel, reorder, help
+    wallet/      balance and history, add money (custom or bonus package, Razorpay), balance chip
+    subscriptions/ membership plans, paid from the wallet (free trial once per plan), cancel
+    help/        support contacts, FAQs, About / Terms / Privacy pages
 ```
 
 ## Notes

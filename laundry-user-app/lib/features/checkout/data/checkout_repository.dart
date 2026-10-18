@@ -149,14 +149,6 @@ class CheckoutRepository {
     }
   }
 
-  Future<double> walletBalance() async {
-    try {
-      return toDouble(unwrap<Map<String, dynamic>>(await _dio.get<dynamic>('/wallet'))['balance']);
-    } catch (_) {
-      return 0;
-    }
-  }
-
   Future<PlacedOrder> confirm({
     required String addressId,
     required String pickupDate,
@@ -194,5 +186,3 @@ final pickupSlotsProvider = FutureProvider.autoDispose.family<List<PickupSlot>, 
 );
 
 final disclaimerProvider = FutureProvider.autoDispose<Disclaimer?>((ref) => ref.watch(checkoutRepositoryProvider).disclaimer());
-
-final walletBalanceProvider = FutureProvider.autoDispose<double>((ref) => ref.watch(checkoutRepositoryProvider).walletBalance());

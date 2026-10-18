@@ -18,6 +18,7 @@ import '../../features/catalogue/presentation/search_screen.dart';
 import '../../features/checkout/data/checkout_repository.dart';
 import '../../features/checkout/presentation/checkout_screen.dart';
 import '../../features/checkout/presentation/order_placed_screen.dart';
+import '../../features/help/presentation/help_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/location/data/location_models.dart';
 import '../../features/location/data/location_repository.dart';
@@ -25,6 +26,11 @@ import '../../features/location/presentation/choose_location_screen.dart';
 import '../../features/onboarding/presentation/blocked_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/onboarding/presentation/splash_screen.dart';
+import '../../features/orders/presentation/order_detail_screen.dart';
+import '../../features/orders/presentation/orders_screen.dart';
+import '../../features/subscriptions/presentation/subscriptions_screen.dart';
+import '../../features/wallet/presentation/add_money_screen.dart';
+import '../../features/wallet/presentation/wallet_screen.dart';
 import '../widgets/main_shell.dart';
 
 class Routes {
@@ -131,6 +137,20 @@ final routerProvider = Provider<GoRouter>((ref) {
           return OrderPlacedScreen(order: placed.order, paid: placed.paid, note: placed.note);
         },
       ),
+      // Account: orders, wallet, membership, help
+      GoRoute(path: '/orders', builder: (_, _) => const OrdersScreen()),
+      GoRoute(path: '/orders/:id', builder: (_, state) => OrderDetailScreen(orderId: state.pathParameters['id']!)),
+      GoRoute(path: '/wallet', builder: (_, _) => const WalletScreen()),
+      GoRoute(
+        path: '/wallet/add',
+        builder: (_, state) => AddMoneyScreen(
+          initialPackageId: state.uri.queryParameters['package'],
+          initialAmount: double.tryParse(state.uri.queryParameters['amount'] ?? ''),
+        ),
+      ),
+      GoRoute(path: '/subscriptions', builder: (_, _) => const SubscriptionsScreen()),
+      GoRoute(path: '/help', builder: (_, _) => const HelpScreen()),
+      GoRoute(path: '/content/:slug', builder: (_, state) => ContentScreen(slug: state.pathParameters['slug']!)),
     ],
   );
 });

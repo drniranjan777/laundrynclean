@@ -48,6 +48,7 @@ dependencies:
   google_fonts: 8.2.1
   font_awesome_flutter: ^11.0.0
   razorpay_flutter: ^1.4.7
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

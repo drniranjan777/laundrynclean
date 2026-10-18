@@ -10,6 +10,7 @@ import '../../catalogue/data/catalogue_repository.dart';
 import '../../catalogue/presentation/item_card.dart';
 import '../../catalogue/presentation/item_visual.dart';
 import '../../location/data/location_repository.dart';
+import '../../wallet/presentation/wallet_screen.dart';
 
 /// Home: service area, search, offers, categories and popular items at the customer's store.
 class HomeScreen extends ConsumerWidget {
@@ -50,7 +51,10 @@ class HomeScreen extends ConsumerWidget {
             const Icon(Icons.keyboard_arrow_down),
           ]),
         ),
-        actions: [Padding(padding: const EdgeInsets.only(right: 12), child: Image.asset('assets/images/logo_wordmark.png', height: 30, semanticLabel: 'NClean'))],
+        actions: [
+          const WalletChip(),
+          Padding(padding: const EdgeInsets.fromLTRB(8, 0, 12, 0), child: Image.asset('assets/images/logo_wordmark.png', height: 26, semanticLabel: 'NClean')),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: () => _refresh(ref),

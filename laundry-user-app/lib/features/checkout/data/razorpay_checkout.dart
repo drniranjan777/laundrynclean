@@ -47,7 +47,7 @@ class RazorpayCheckout {
       'name': 'NClean',
       'description': description,
       'prefill': {'contact': ?phone, 'email': ?email, 'name': ?name},
-      'theme': {'color': '#1F4E5A'},
+      'theme': {'color': '#062C5A'},
     });
 
     return completer.future.whenComplete(razorpay.clear);

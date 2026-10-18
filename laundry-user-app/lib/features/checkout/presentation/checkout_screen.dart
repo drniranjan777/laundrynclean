@@ -11,6 +11,7 @@ import '../../auth/application/session_controller.dart';
 import '../../cart/application/cart_controller.dart';
 import '../../cart/data/cart_models.dart';
 import '../../cart/data/cart_repository.dart';
+import '../../wallet/data/wallet_repository.dart';
 import '../data/checkout_repository.dart';
 import '../data/razorpay_checkout.dart';
 
@@ -83,7 +84,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  double _total(Cart cart) => (cart.subtotal - (_promo?.discount ?? 0) + cart.deliveryFee).clamp(0, double.infinity).toDouble();
+  /// Promo and member discounts together, never more than the subtotal (as the backend works it out)
+  double _discount(Cart cart) => ((_promo?.discount ?? 0) + cart.memberDiscount).clamp(0, cart.subtotal).toDouble();
+
+  double _total(Cart cart) => (cart.subtotal - _discount(cart) + cart.deliveryFee).clamp(0, double.infinity).toDouble();
+
+  Future<void> _topUp(double shortfall) async {
+    await context.push('/wallet/add?amount=${shortfall.ceil()}');
+    refreshWallet(ref);
+  }
 
   Future<void> _place(Cart cart, bool needsDisclaimer) async {
     final problem = _address == null
@@ -110,6 +119,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         disclaimerAccepted: _agreed || !needsDisclaimer,
       );
       ref.invalidate(cartProvider); // the backend emptied the cart
+      if (_method == PaymentMethod.wallet) refreshWallet(ref);
 
       var paid = order.paymentStatus == 'paid';
       String? paymentNote;
@@ -268,11 +278,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             PaymentMethod.cod => true,
                           },
                           note: switch (m) {
-                            PaymentMethod.wallet => 'Balance ${rupees(balance)}${balance < total ? ' · not enough for this order' : ''}',
+                            PaymentMethod.wallet => 'Balance ${rupees(balance)}${balance < total ? ' · add ${rupees((total - balance).ceilToDouble())} to use it' : ''}',
                             PaymentMethod.online => RazorpayCheckout.isSupported ? null : 'Available in the app on your phone',
                             PaymentMethod.cod => null,
                           },
                           onTap: () => setState(() => _method = m),
+                          action: m == PaymentMethod.wallet && balance < total
+                              ? TextButton(onPressed: () => _topUp(total - balance), child: const Text('Add money'))
+                              : null,
                         ),
                     ]),
                   ),
@@ -284,7 +297,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             ),
             _BillBar(
               cart: c,
-              discount: _promo?.discount ?? 0,
+              promoDiscount: (_promo?.discount ?? 0).clamp(0, c.subtotal).toDouble(),
+              memberDiscount: (_discount(c) - (_promo?.discount ?? 0)).clamp(0, c.subtotal).toDouble(),
               total: total,
               placing: _placing,
               label: _method == PaymentMethod.online ? 'Pay ${rupees(total)}' : 'Place order · ${rupees(total)}',
@@ -442,13 +456,14 @@ class _SlotTile extends StatelessWidget {
 }
 
 class _PaymentOption extends StatelessWidget {
-  const _PaymentOption({required this.method, required this.selected, required this.enabled, required this.onTap, this.note});
+  const _PaymentOption({required this.method, required this.selected, required this.enabled, required this.onTap, this.note, this.action});
 
   final PaymentMethod method;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
   final String? note;
+  final Widget? action; // stays tappable while the option is disabled ("Add money")
 
   @override
   Widget build(BuildContext context) {
@@ -458,28 +473,33 @@ class _PaymentOption extends StatelessWidget {
       PaymentMethod.wallet => Icons.account_balance_wallet_outlined,
       PaymentMethod.online => Icons.credit_card,
     };
-    return Opacity(
-      opacity: enabled ? 1 : 0.5,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: enabled ? onTap : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(children: [
-            Icon(selected && enabled ? Icons.radio_button_checked : Icons.radio_button_off, color: AppColors.secondary),
-            const SizedBox(width: 10),
-            Icon(icon, color: AppColors.textMuted),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(method.label, style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
-                Text(note ?? method.hint, style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+    return Row(children: [
+      Expanded(
+        child: Opacity(
+          opacity: enabled ? 1 : 0.5,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: enabled ? onTap : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                Icon(selected && enabled ? Icons.radio_button_checked : Icons.radio_button_off, color: AppColors.secondary),
+                const SizedBox(width: 10),
+                Icon(icon, color: AppColors.textMuted),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(method.label, style: text.bodyLarge?.copyWith(fontWeight: FontWeight.w500)),
+                    Text(note ?? method.hint, style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+                  ]),
+                ),
               ]),
             ),
-          ]),
+          ),
         ),
       ),
-    );
+      ?action,
+    ]);
   }
 }
 
@@ -511,10 +531,19 @@ class _DisclaimerTile extends StatelessWidget {
 }
 
 class _BillBar extends StatelessWidget {
-  const _BillBar({required this.cart, required this.discount, required this.total, required this.placing, required this.label, required this.onPlace});
+  const _BillBar({
+    required this.cart,
+    required this.promoDiscount,
+    required this.memberDiscount,
+    required this.total,
+    required this.placing,
+    required this.label,
+    required this.onPlace,
+  });
 
   final Cart cart;
-  final double discount;
+  final double promoDiscount;
+  final double memberDiscount;
   final double total;
   final bool placing;
   final String label;
@@ -538,8 +567,13 @@ class _BillBar extends StatelessWidget {
         top: false,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           row('Subtotal', rupees(cart.subtotal)),
-          row('Pickup & delivery', cart.deliveryFee == 0 ? 'Free' : rupees(cart.deliveryFee)),
-          if (discount > 0) row('Offer', '- ${rupees(discount)}', color: const Color(0xFF16A34A)),
+          row(
+            'Pickup & delivery${cart.deliveryFee == 0 && (cart.membership?.freeDelivery ?? false) ? ' (member)' : ''}',
+            cart.deliveryFee == 0 ? 'Free' : rupees(cart.deliveryFee),
+          ),
+          if (memberDiscount > 0)
+            row('${cart.membership?.planName ?? 'Member'} discount', '- ${rupees(memberDiscount)}', color: const Color(0xFF16A34A)),
+          if (promoDiscount > 0) row('Offer', '- ${rupees(promoDiscount)}', color: const Color(0xFF16A34A)),
           const Divider(height: 14),
           row('Total', rupees(total), bold: true),
           const SizedBox(height: 10),
