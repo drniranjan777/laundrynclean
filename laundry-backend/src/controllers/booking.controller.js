@@ -2,6 +2,7 @@ const { TimeSlot, Booking, BookingItem } = require('../models/booking.model');
 const { CartItem } = require('../models/cart.model');
 const { Item } = require('../models/category.model');
 const Address = require('../models/address.model');
+const User = require('../models/user.model');
 const { sendSuccess, sendError } = require('../utils/response');
 const { sequelize } = require('../config/db');
 const { generateOrderNumber, canChangeStatus } = require('../utils/helpers');
@@ -128,6 +129,8 @@ const confirmBooking = async (req, res, next) => {
       await t.rollback();
       return sendError(res, 404, 'Address not found');
     }
+    // Who placed it, saved on the order so store staff see the customer's name and mobile (like store orders)
+    const customer = await User.findByPk(req.user.id, { attributes: ['name', 'phone'], transaction: t });
 
     // The store serving the pickup pincode handles the order, with its own prices and slot capacity
     const location = await findLocationByPincode(address.pincode, t);
@@ -248,6 +251,8 @@ const confirmBooking = async (req, res, next) => {
       paymentMethod,
       paymentStatus,
       status: needsOnlinePayment ? 'pending' : 'confirmed',
+      customerName: customer?.name || address.fullName,
+      customerPhone: customer?.phone || address.phone,
       notes,
       disclaimerAccepted: disclaimerAccepted || false,
       estimatedDeliveryDate: estDelivery.toISOString().split('T')[0],
