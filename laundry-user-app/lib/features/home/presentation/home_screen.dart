@@ -10,6 +10,8 @@ import '../../catalogue/data/catalogue_repository.dart';
 import '../../catalogue/presentation/item_card.dart';
 import '../../catalogue/presentation/item_visual.dart';
 import '../../location/data/location_repository.dart';
+import '../../pickup/data/pickup_repository.dart';
+import '../../pickup/presentation/pickup_widgets.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 
 /// Home: service area, search, offers, categories and popular items at the customer's store.
@@ -20,6 +22,7 @@ class HomeScreen extends ConsumerWidget {
     ref.invalidate(promosProvider);
     ref.invalidate(categoryItemsProvider);
     ref.invalidate(categoriesProvider);
+    ref.invalidate(pickupConfigProvider(null));
     await ref.read(categoriesProvider.future);
   }
 
@@ -105,6 +108,7 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             if (categories.value?.isNotEmpty == true) _Popular(category: categories.value!.first),
+            const _SchedulePickupCard(),
           ],
         ),
       ),
@@ -195,6 +199,49 @@ class _Popular extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// "Direct Schedule Pickup" for bulk orders; shown only while the admin has Schedule Pickup switched on.
+class _SchedulePickupCard extends ConsumerWidget {
+  const _SchedulePickupCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final config = ref.watch(pickupConfigProvider(null)).value;
+    if (config == null || !config.available) return const SizedBox.shrink();
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 14, 14, 14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [AppColors.sky.withValues(alpha: 0.10), AppColors.primary.withValues(alpha: 0.08)]),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(children: [
+          const BasketArt(size: 92),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Direct Schedule Pickup', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: AppColors.secondary)),
+              const SizedBox(height: 4),
+              Text("Bulk laundry? Choose a day and time and we'll pick it all up.", style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 44,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.secondary, minimumSize: const Size.fromHeight(44)),
+                  onPressed: () => context.push('/pickup'),
+                  icon: const Icon(Icons.local_shipping_outlined, size: 20),
+                  label: const Text('Book Pickup'),
+                ),
+              ),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 }

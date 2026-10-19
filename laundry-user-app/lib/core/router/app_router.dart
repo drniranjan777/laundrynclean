@@ -28,6 +28,10 @@ import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/onboarding/presentation/splash_screen.dart';
 import '../../features/orders/presentation/order_detail_screen.dart';
 import '../../features/orders/presentation/orders_screen.dart';
+import '../../features/pickup/data/pickup_repository.dart';
+import '../../features/pickup/presentation/pickup_booked_screen.dart';
+import '../../features/pickup/presentation/pickup_review_screen.dart';
+import '../../features/pickup/presentation/schedule_pickup_screen.dart';
 import '../../features/subscriptions/presentation/subscriptions_screen.dart';
 import '../../features/wallet/presentation/add_money_screen.dart';
 import '../../features/wallet/presentation/wallet_screen.dart';
@@ -135,6 +139,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) {
           final placed = state.extra! as ({PlacedOrder order, bool paid, String? note});
           return OrderPlacedScreen(order: placed.order, paid: placed.paid, note: placed.note);
+        },
+      ),
+      // Schedule Pickup (bulk orders): date & slot, review & confirm, booked
+      GoRoute(path: '/pickup', builder: (_, _) => const SchedulePickupScreen()),
+      GoRoute(path: '/pickup/review', builder: (_, _) => const PickupReviewScreen()),
+      GoRoute(
+        path: '/pickup/booked',
+        redirect: (_, state) => state.extra == null ? Routes.home : null,
+        builder: (_, state) {
+          final done = state.extra! as ({BookedPickup booked, String? dayName});
+          return PickupBookedScreen(booked: done.booked, dayName: done.dayName);
         },
       ),
       // Account: orders, wallet, membership, help

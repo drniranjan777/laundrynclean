@@ -8,8 +8,12 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/contact.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/widgets/ui_kit.dart';
+import '../../auth/application/session_controller.dart';
 import '../../cart/application/cart_controller.dart';
+import '../../checkout/data/checkout_repository.dart';
+import '../../checkout/data/razorpay_checkout.dart';
 import '../../onboarding/data/onboarding_repository.dart';
+import '../../pickup/data/pickup_repository.dart';
 import '../../wallet/data/wallet_repository.dart';
 import '../data/orders_repository.dart';
 
@@ -84,6 +88,26 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     if (added == 0) return _toast(problem ?? 'These items aren\'t available any more');
     _toast(problem == null ? 'Added to your cart' : 'Added $added of ${order.reorderable.length} items. $problem');
     context.go(Routes.cart);
+  }
+
+  /// Online payment for an unpaid order (a billed bulk pickup, or a failed / cancelled Razorpay payment): the server
+  /// creates the gateway order for the total, Razorpay takes the payment, and the server verifies it.
+  Future<void> _pay(Order order) async {
+    setState(() => _busy = true);
+    try {
+      final payment = await ref.read(pickupRepositoryProvider).startPayment(order.id);
+      final user = ref.read(sessionProvider).user;
+      final result = await RazorpayCheckout().pay(payment, description: 'Order ${order.orderNumber}', name: user?.name, phone: user?.phone, email: user?.email);
+      await ref.read(checkoutRepositoryProvider).verifyPayment(order.id, orderId: result.orderId, paymentId: result.paymentId, signature: result.signature);
+      ref.invalidate(orderDetailProvider(order.id));
+      ref.invalidate(ordersProvider);
+      _toast('Payment received. Thank you!');
+    } on ApiException catch (e) {
+      _toast(e.message);
+      ref.invalidate(orderDetailProvider(order.id));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _help(Order order) {
@@ -178,7 +202,21 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: order == null || (!order.canCancel && order.reorderable.isEmpty)
+      bottomNavigationBar: order != null && order.canPayOnline
+          ? Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -2))]),
+              child: SafeArea(
+                top: false,
+                child: FilledButton(
+                  onPressed: _busy ? null : () => _pay(order),
+                  child: _busy
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                      : Text('Pay ${rupees(order.total)} now'),
+                ),
+              ),
+            )
+          : order == null || (!order.canCancel && order.reorderable.isEmpty)
           ? null
           : Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -385,9 +423,33 @@ class _ItemsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    if (order.awaitingBill || (order.isBulkPickup && order.lines.isEmpty)) {
+      return AppCard(
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.local_laundry_service_outlined, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Bulk pickup', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text('Your clothes are counted at the store after pickup. The items and your bill will appear here then.',
+                  style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
+            ]),
+          ),
+        ]),
+      );
+    }
     return AppCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${order.itemCount} item${order.itemCount == 1 ? '' : 's'}', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+        Row(children: [
+          Expanded(child: Text('${order.itemCount} item${order.itemCount == 1 ? '' : 's'}', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+          if (order.isBulkPickup) const StatusChip('Bulk pickup', color: AppColors.primary),
+        ]),
         const SizedBox(height: 8),
         for (final l in order.lines)
           Padding(
@@ -467,21 +529,32 @@ class _BillCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Bill details', style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
-        KeyValueRow('Item total', rupees(order.subtotal)),
-        if (!order.isStoreOrder) KeyValueRow('Pickup & delivery', order.deliveryFee == 0 ? 'Free' : rupees(order.deliveryFee)),
-        if (order.discount > 0) KeyValueRow('Discount', '- ${rupees(order.discount)}', valueColor: green),
-        if (order.gstAmount > 0) KeyValueRow('GST', rupees(order.gstAmount)),
-        const Divider(height: 18),
-        KeyValueRow('Total', rupees(order.total), bold: true),
-        const SizedBox(height: 8),
-        Row(children: [
-          Icon(order.paymentMethod == 'wallet' ? Icons.account_balance_wallet_outlined : Icons.payments_outlined, size: 18, color: AppColors.textMuted),
-          const SizedBox(width: 8),
-          Expanded(child: Text(order.paymentLabel, style: text.bodyMedium?.copyWith(color: AppColors.textMuted))),
-        ]),
-        if (order.invoiceNumber != null) ...[
-          const SizedBox(height: 4),
-          Text('Invoice ${order.invoiceNumber}', style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+        if (order.awaitingBill) ...[
+          Text("To be billed after pickup. Pickup & delivery charges follow the store's free-delivery amount.",
+              style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
+          const SizedBox(height: 8),
+          Row(children: [
+            const Icon(Icons.payments_outlined, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            Expanded(child: Text(order.paymentLabel, style: text.bodyMedium?.copyWith(color: AppColors.textMuted))),
+          ]),
+        ] else ...[
+          KeyValueRow('Item total', rupees(order.subtotal)),
+          if (!order.isStoreOrder) KeyValueRow('Pickup & delivery', order.deliveryFee == 0 ? 'Free' : rupees(order.deliveryFee)),
+          if (order.discount > 0) KeyValueRow('Discount', '- ${rupees(order.discount)}', valueColor: green),
+          if (order.gstAmount > 0) KeyValueRow('GST', rupees(order.gstAmount)),
+          const Divider(height: 18),
+          KeyValueRow('Total', rupees(order.total), bold: true),
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(order.paymentMethod == 'wallet' ? Icons.account_balance_wallet_outlined : Icons.payments_outlined, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            Expanded(child: Text(order.paymentLabel, style: text.bodyMedium?.copyWith(color: AppColors.textMuted))),
+          ]),
+          if (order.invoiceNumber != null) ...[
+            const SizedBox(height: 4),
+            Text('Invoice ${order.invoiceNumber}', style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+          ],
         ],
       ]),
     );

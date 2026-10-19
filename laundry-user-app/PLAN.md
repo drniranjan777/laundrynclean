@@ -136,6 +136,21 @@ Each phase ends with a build that can be installed on a phone and demoed. The ti
 - Order placed screen with the order number.
 - **Done when:** a user can book a pickup end to end with COD and with Razorpay (test mode).
 
+> **Done (2026-10-19), Schedule Pickup for bulk orders.** A two-screen flow, entered from the **Direct Schedule Pickup → Book Pickup** card on Home. The card only shows while the admin has Schedule Pickup and bulk bookings switched on.
+> - **Screen 1 (`/pickup`).**
+>   - Header: back, logo and wallet chip. Then the pickup address and store (with Change) and the "For Bulk Orders Only" card.
+>   - **Step 1, days:** a horizontal strip from `GET /pickups/dates?addressId=`. Same-day pickup is never offered: tomorrow is the earliest by default. The window, working days, holidays and the store's own window come from the admin. A disabled day says why when tapped.
+>   - **Step 2, slots:** from `GET /pickups/slots?date=&addressId=`, as selected / available / full / unavailable cards, with "N left" when few remain. Slots are per store and per weekday, with date-specific capacity.
+>   - Then the store's delivery charge card (amounts from the admin's rule) and **Next**.
+> - **Screen 2 (`/pickup/review`).**
+>   - Store, address, date & slot (each with Change) and order type Bulk Pickup.
+>   - Summary: billed after pickup, pickup & delivery charge rule, member discount, payable now ₹0.
+>   - The rules (from the admin's instructions and policies), payment method (Cash on delivery / Pay online after billing), instructions for the partner.
+>   - **Confirm Pickup** calls `POST /pickups` with an idempotency key, so a retry never makes a second order. A full slot or a closed date sends the customer back to screen 1 with fresh availability.
+> - **Pickup Booked! (`/pickup/booked`):** order number, date and weekday, slot, store, amount (after pickup) and payment method, plus Back to Home and Track this order.
+> - **Orders:** bulk pickups show "Bulk pickup / To be billed" until the store bills them. Once billed, an online-payment order shows **Pay ₹X now**: `POST /bookings/:id/pay` → Razorpay → `verify-payment`. The same button now lets a customer pay again for an app order whose Razorpay payment failed (B11).
+> - Tests: `test/schedule_pickup_test.dart` covers the models and the draft (the selection and idempotency key are kept between screens). It also checks screens 1 and 2 and the confirmation at 320×640, 390×844 and 430×932 with no overflow, the paused state, and bulk order details. `flutter analyze` is clean and the full suite passes.
+
 ### Phase 4: Orders, tracking & notifications (≈ 1.5 weeks) — orders done, notifications open
 
 > **Done (2026-10-18), account features.** All four "Soon" items on the Account tab now work, styled after the `Screens/` board in the NClean colours.
@@ -210,7 +225,7 @@ These are changes in `laundry-backend`. The rest of the API the app needs alread
 | B7 | **Delete account** endpoint (anonymise the user, keep orders for accounting) | Phase 6 |
 | B8 | ✅ **Fixed (2026-10-18).** `/location/save` no longer writes addresses. It returns `isServiceable`, `location` and the default `addressId`. Original issue: **`POST /location/save` was broken.** <ul><li>For a customer with no default address it creates an address without the required `fullName`, so it fails.</li><li>For a customer who has one, it overwrites the pincode of their real default address.</li></ul>Fix it (or drop it); the app doesn't call it today. | Before Phase 3 |
 | B10 | ✅ **Done (2026-10-18).** `GET /cart` and `GET /cart/favorites` accept `?locationId=`, so a new customer with no address yet sees their store's prices in the cart, the same as in the catalogue. Cart and favourite items now include `icon` and `categoryId`, and favourites are priced for the store (with `isAvailable`). | Phase 2 |
-| B11 | **Retry payment for an unpaid online order.** If Razorpay fails or is cancelled after confirm, the booking stays `pending` / unpaid, and there's no endpoint to create a new Razorpay order for it. Add `POST /bookings/:id/pay` (new Razorpay order for the same total), or let the customer switch to COD. | Before launch |
+| B11 | ✅ **Done (2026-10-19).** `POST /bookings/:id/pay` starts a new Razorpay order for the order's total (card / UPI, unpaid, not cancelled); the app shows **Pay ₹X now** on the order and verifies with `verify-payment`. Original issue: **Retry payment for an unpaid online order.** If Razorpay fails or is cancelled after confirm, the booking stays `pending` / unpaid, and there's no endpoint to create a new Razorpay order for it. Add `POST /bookings/:id/pay` (new Razorpay order for the same total), or let the customer switch to COD. | Before launch |
 | B12 | **Soft-delete addresses.** An address used by any order can't be deleted (409 with a clear message, added 2026-10-18). Add `deleted_at` so customers can hide old addresses while orders keep theirs. | Later |
 | B14 | ✅ **Done (2026-10-18). Subscriptions are paid, and their benefits apply.**<ul><li>`POST /subscriptions/subscribe` used to activate any plan for free. Now it debits the wallet (400 with the amount to add when the balance is short).</li><li>A plan's trial days are a free trial, given once per plan.</li><li>A cancelled plan stays current, with its benefits, until its end date (`my-subscription` returns it as `cancelled`).</li><li>Members get free delivery and their plan's % off in `GET /cart` (`memberDiscount`, `membership`) and at `/bookings/confirm` (added to any promo discount in the booking's `discount`).</li><li>Wallet history gets a `subscription` entry type (migration 026), and wallet order payments name the order.</li></ul> | Phase 5 |
 | B13 | **Razorpay keys for dev / test.** The keys in the dev `.env` are rejected by Razorpay. Add test-mode keys to exercise UPI / Card end to end on a phone. | Before Phase 7 |

@@ -168,9 +168,10 @@ class OrderCard extends ConsumerWidget {
         ],
         const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
         Row(children: [
-          Text('${order.itemCount} item${order.itemCount == 1 ? '' : 's'}', style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
+          Text(order.awaitingBill ? 'Bulk pickup' : '${order.itemCount} item${order.itemCount == 1 ? '' : 's'}',
+              style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
           const SizedBox(width: 8),
-          Text(rupees(order.total), style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Text(order.awaitingBill ? 'To be billed' : rupees(order.total), style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
           const Spacer(),
           StatusChip(order.status.label, color: order.status.color),
           const SizedBox(width: 4),

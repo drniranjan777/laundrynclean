@@ -118,6 +118,7 @@ class Order {
     required this.orderNumber,
     required this.status,
     required this.isStoreOrder,
+    this.isBulkPickup = false,
     required this.paymentMethod,
     required this.paymentStatus,
     required this.subtotal,
@@ -142,6 +143,7 @@ class Order {
   final String orderNumber;
   final OrderStatus status;
   final bool isStoreOrder; // placed at the store counter (POS)
+  final bool isBulkPickup; // Schedule Pickup: counted and billed at the store after pickup
   final String paymentMethod;
   final String paymentStatus;
   final double subtotal;
@@ -163,11 +165,20 @@ class Order {
 
   int get itemCount => lines.fold(0, (sum, l) => sum + l.quantity);
 
+  /// A bulk pickup that hasn't been counted and billed yet
+  bool get awaitingBill => isBulkPickup && total <= 0;
+
+  /// An online-payment order with an amount that isn't paid yet: a billed bulk pickup, or an app order whose
+  /// Razorpay payment failed or was cancelled (POST /bookings/:id/pay starts a new payment for the same total)
+  bool get canPayOnline =>
+      !isStoreOrder && !awaitingBill && total > 0 && (paymentMethod == 'upi' || paymentMethod == 'card') && paymentStatus != 'paid' && status != OrderStatus.cancelled;
+
   /// The customer may cancel an online order until it's on the way to be picked up (the backend's rule)
   bool get canCancel => !isStoreOrder && (status == OrderStatus.pending || status == OrderStatus.confirmed);
 
-  /// Items that can go back into the cart (custom store items have no catalogue id)
-  List<OrderLine> get reorderable => lines.where((l) => l.itemId != null).toList();
+  /// Items that can go back into the cart (custom store items have no catalogue id; bulk pickups are booked again
+  /// with Schedule Pickup, not through the cart)
+  List<OrderLine> get reorderable => isBulkPickup ? const [] : lines.where((l) => l.itemId != null).toList();
 
   String get paymentLabel {
     final method = switch (paymentMethod) {
@@ -182,7 +193,7 @@ class Order {
       'paid' => 'Paid',
       'refunded' => 'Refunded',
       'failed' => 'Failed',
-      _ => paymentMethod == 'cod' ? 'Pay on delivery' : 'Pending',
+      _ => paymentMethod == 'cod' ? 'Pay on delivery' : (awaitingBill ? 'Pay after billing' : 'Pending'),
     };
     return '$method · $state';
   }
@@ -192,6 +203,7 @@ class Order {
         orderNumber: json['orderNumber'] as String? ?? '',
         status: OrderStatus.from(json['status'] as String?),
         isStoreOrder: json['orderType'] == 'offline',
+        isBulkPickup: json['bookingType'] == 'bulk_pickup',
         paymentMethod: json['paymentMethod'] as String? ?? '',
         paymentStatus: json['paymentStatus'] as String? ?? 'pending',
         subtotal: toDouble(json['subtotal']),
