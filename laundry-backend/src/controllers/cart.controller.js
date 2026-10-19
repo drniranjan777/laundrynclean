@@ -4,6 +4,7 @@ const Address = require('../models/address.model');
 const { Location } = require('../models/location.model');
 const { sendSuccess, sendError } = require('../utils/response');
 const { memberBenefits, memberDiscountOn } = require('../services/subscription.service');
+const { ruleFor, chargesFor } = require('../services/delivery-charge.service');
 const { findLocationByPincode, getPriceOverrides, priceAt } = require('../services/location.service');
 const { isUuid } = require('../utils/location-scope');
 
@@ -24,9 +25,6 @@ const cartLocation = async (req) => {
   return address ? findLocationByPincode(address.pincode) : null;
 };
 
-const DELIVERY_FEE = 50;
-const FREE_DELIVERY_THRESHOLD = 250;
-const MIN_ITEMS_FREE_DELIVERY = 10;
 
 /**
  * GET /api/v1/cart
@@ -67,12 +65,10 @@ const getCart = async (req, res, next) => {
       };
     });
 
-    // Delivery fee logic: ₹50 if order < ₹250 OR fewer than 10 items, unless the customer's plan has free delivery
+    // Pickup & delivery charge from the store's charge rule (admin-configured), unless the plan has free delivery
     const membership = await memberBenefits(req.user.id);
-    let deliveryFee = 0;
-    if ((subtotal < FREE_DELIVERY_THRESHOLD || totalItems < MIN_ITEMS_FREE_DELIVERY) && !membership?.freeDelivery) {
-      deliveryFee = DELIVERY_FEE;
-    }
+    const rule = await ruleFor(location?.id);
+    const { deliveryFee, rule: charges } = chargesFor(rule, { subtotal, quantity: totalItems, freeDelivery: !!membership?.freeDelivery });
     // Members get their plan's discount on every order (promo codes apply on top, at checkout)
     const memberDiscount = memberDiscountOn(subtotal, membership);
 
@@ -87,8 +83,8 @@ const getCart = async (req, res, next) => {
       deliveryFee,
       memberDiscount,
       membership,
-      freeDeliveryThreshold: FREE_DELIVERY_THRESHOLD,
-      minItemsFreeDelivery: MIN_ITEMS_FREE_DELIVERY,
+      freeDeliveryThreshold: charges.freeAbove,
+      minItemsFreeDelivery: charges.minItemsFree || 0,
       total: Math.round(total * 100) / 100,
     });
   } catch (error) {

@@ -13,11 +13,19 @@ const INDIA = '+05:30';
  * - orderType: online | offline
  * - paymentStatus: paid | pending | failed | refunded
  * - paymentMethod: cod (cash) | upi | card | wallet
+ * - bookingType: standard | bulk_pickup (Schedule Pickup)
+ * - timeSlotId: pickup time slot
+ * - locationId: a store (admins; a branch manager always sees their own store)
+ * - pickupFrom / pickupTo: scheduled pickup date (YYYY-MM-DD), inclusive
  * Returns { where } or { error } for a bad filter.
  */
 const staffOrderFilters = (req) => {
-  const { search, dateFrom, dateTo, driverId, orderType, paymentStatus, paymentMethod } = req.query;
+  const { search, dateFrom, dateTo, driverId, orderType, paymentStatus, paymentMethod, bookingType, timeSlotId, locationId, pickupFrom, pickupTo } = req.query;
   const where = { ...locationFilter(req) };
+  if (locationId && req.user?.role !== 'manager') {
+    if (!isUuid(locationId)) return { error: 'Invalid store' };
+    where.locationId = locationId;
+  }
 
   const s = typeof search === 'string' ? search.trim() : '';
   if (s) {
@@ -61,6 +69,21 @@ const staffOrderFilters = (req) => {
   if (paymentMethod) {
     if (!['cod', 'upi', 'card', 'wallet'].includes(paymentMethod)) return { error: 'Unknown payment method' };
     where.paymentMethod = paymentMethod;
+  }
+
+  if (bookingType) {
+    if (!['standard', 'bulk_pickup'].includes(bookingType)) return { error: 'bookingType must be standard or bulk_pickup' };
+    where.bookingType = bookingType;
+  }
+
+  if (timeSlotId) {
+    if (!isUuid(timeSlotId)) return { error: 'Invalid time slot' };
+    where.timeSlotId = timeSlotId;
+  }
+
+  if (pickupFrom || pickupTo) {
+    if ((pickupFrom && !DAY.test(pickupFrom)) || (pickupTo && !DAY.test(pickupTo))) return { error: 'Pickup dates must be YYYY-MM-DD' };
+    where.pickupDate = { ...(pickupFrom ? { [Op.gte]: pickupFrom } : {}), ...(pickupTo ? { [Op.lte]: pickupTo } : {}) };
   }
 
   return { where };

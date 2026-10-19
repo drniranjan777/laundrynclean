@@ -29,6 +29,12 @@ const formatCurrency = (amount) => {
 };
 
 /** Cash still to collect for an order: its total for an unpaid cash order (COD, or a store order paid later), else 0 */
-const cashDue = (booking) => (booking.paymentMethod === 'cod' && booking.paymentStatus !== 'paid' ? Number(booking.total) : 0);
+/**
+ * Cash the partner collects at delivery: COD orders, and bulk pickups (billed after pickup) that the customer
+ * chose to pay online but hadn't paid by the time they are delivered.
+ */
+const cashDue = (booking) => (booking.paymentStatus !== 'paid' && (booking.paymentMethod === 'cod' || booking.bookingType === 'bulk_pickup')
+  ? Number(booking.total)
+  : 0);
 
 module.exports = { generateOrderNumber, canChangeStatus, paginate, formatCurrency, cashDue };

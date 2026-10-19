@@ -315,7 +315,8 @@ const driverLogin = async (req, res, next) => {
  * - address
  * - store: the order's location
  * - itemCount
- * - amountToCollect: cash due on delivery for unpaid COD orders
+ * - amountToCollect: cash due on delivery for unpaid COD orders (and billed bulk pickups not yet paid online)
+ * - bookingType: standard | bulk_pickup (counted and billed after pickup, so it may have no items yet)
  */
 const DRIVER_STAGES = {
   pending: 'pickup', confirmed: 'pickup', pickup_scheduled: 'pickup',

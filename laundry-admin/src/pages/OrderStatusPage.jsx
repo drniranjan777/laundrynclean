@@ -3,7 +3,7 @@ import toast from 'react-hot-toast';
 import {
   HiOutlineClock, HiOutlineBadgeCheck, HiOutlineTruck, HiOutlineCheckCircle, HiOutlineOfficeBuilding, HiOutlineCube,
   HiOutlineInbox, HiOutlineCalendar, HiOutlineUserAdd, HiOutlineClipboardList, HiOutlineSearch, HiOutlineRefresh,
-  HiArrowRight, HiOutlinePencilAlt, HiOutlineReply, HiOutlineX,
+  HiArrowRight, HiOutlinePencilAlt, HiOutlineReply, HiOutlineX, HiOutlineCalculator,
 } from 'react-icons/hi';
 import api from '../api/axios';
 import { useAuth } from '../hooks/useAuth';
@@ -11,6 +11,7 @@ import { useLocations } from '../context/LocationContext';
 import {
   ConfirmDeliveredDialog, ConfirmCollectedDialog, ReasonDialog, CorrectionDialog, OrderHistoryModal,
 } from '../components/OrderWorkflow';
+import BillPickupDialog from '../components/BillPickupDialog';
 import { statusLabel, statusBadge, paymentBadge, formatDateTime, formatDate, CORRECTIONS } from '../utils/orderStatus';
 
 // Processing and handover: the main tabs
@@ -32,7 +33,7 @@ const INCOMING_TABS = [
 
 const ALL_TABS = [...WORKFLOW_TABS, ...INCOMING_TABS];
 const PAGE_SIZE = 30;
-const EMPTY_FILTERS = { search: '', dateFrom: '', dateTo: '', driverId: '', orderType: '' };
+const EMPTY_FILTERS = { search: '', dateFrom: '', dateTo: '', driverId: '', orderType: '', bookingType: '' };
 
 export default function OrderStatusPage() {
   const { user } = useAuth();
@@ -186,7 +187,7 @@ export default function OrderStatusPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm p-3 mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+      <div className="bg-white rounded-xl shadow-sm p-3 mb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
         <label className="lg:col-span-2 relative">
           <span className="sr-only">Search</span>
           <HiOutlineSearch className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -211,6 +212,14 @@ export default function OrderStatusPage() {
             <option value="">All partners</option>
             <option value="none">No partner</option>
             {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </label>
+        <label className="text-xs text-gray-500">
+          Booking
+          <select value={filters.bookingType} onChange={(e) => setFilter('bookingType', e.target.value)} className="mt-0.5 w-full px-2 py-1.5 border rounded-lg text-sm text-gray-700">
+            <option value="">All bookings</option>
+            <option value="standard">App &amp; store orders</option>
+            <option value="bulk_pickup">Bulk pickups</option>
           </select>
         </label>
         <div className="flex gap-2 items-end">
@@ -270,6 +279,7 @@ export default function OrderStatusPage() {
       {dialog?.kind === 'reason' && <ReasonDialog booking={dialog.booking} to={dialog.to} onClose={closeDialog} onDone={afterDialog} />}
       {dialog?.kind === 'correct' && <CorrectionDialog booking={dialog.booking} onClose={closeDialog} onDone={afterDialog} />}
       {dialog?.kind === 'history' && <OrderHistoryModal booking={dialog.booking} onClose={closeDialog} />}
+      {dialog?.kind === 'bill' && <BillPickupDialog booking={dialog.booking} onClose={closeDialog} onDone={afterDialog} />}
     </div>
   );
 }
@@ -295,6 +305,9 @@ function OrderCard({ booking, tab, isAdmin, store, drivers, assigning, onAssignS
   const canCancel = !['delivered', 'collected', 'cancelled'].includes(s);
   const canAssign = !['delivered', 'collected', 'cancelled', 'ready_for_pickup'].includes(s);
   const storeDrivers = drivers.filter(d => !booking.locationId || !d.locationId || d.locationId === booking.locationId);
+  const isBulk = booking.bookingType === 'bulk_pickup';
+  const unbilled = isBulk && !(Number(booking.total) > 0);
+  const canBill = isBulk && booking.paymentStatus !== 'paid' && ['picked_up', 'in_process', 'ready'].includes(s);
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-4 sm:p-5">
@@ -303,9 +316,12 @@ function OrderCard({ booking, tab, isAdmin, store, drivers, assigning, onAssignS
           <div className="flex items-center gap-2 flex-wrap mb-1">
             <span className="font-mono font-bold text-sm text-secondary">{booking.orderNumber}</span>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${isStore ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>{isStore ? 'Store' : 'Online'}</span>
+            {isBulk && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700">Bulk pickup</span>}
             {tab.includes(',') && <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(s)}`}>{statusLabel(s)}</span>}
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${pay.className}`}>{pay.text}</span>
-            <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">{pieces} piece{pieces === 1 ? '' : 's'}</span>
+            {unbilled
+              ? <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">Count at pickup</span>
+              : <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">{pieces} piece{pieces === 1 ? '' : 's'}</span>}
             {booking.failedAttempts > 0 && (
               <button onClick={() => onDialog('history')} className="px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs hover:bg-red-100" title="Open the history">
                 {booking.failedAttempts} failed attempt{booking.failedAttempts === 1 ? '' : 's'}{booking.lastFailure?.reason ? ` · ${booking.lastFailure.reason}` : ''}
@@ -314,7 +330,8 @@ function OrderCard({ booking, tab, isAdmin, store, drivers, assigning, onAssignS
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
             <span className="font-medium text-gray-700">{booking.customerName || 'Customer'}{booking.customerPhone ? ` · ${booking.customerPhone}` : ''}</span>
-            <span className="font-medium text-gray-700">₹{booking.total}</span>
+            <span className="font-medium text-gray-700">{unbilled ? 'Not billed yet' : `₹${booking.total}`}</span>
+            {isBulk && booking.pickupDate && <span>Pickup {formatDate(booking.pickupDate)}{booking.timeSlot?.label ? ` · ${booking.timeSlot.label}` : ''}</span>}
             {store && <span>{store}</span>}
             <span>Placed {formatDate(booking.createdAt || booking.created_at)}</span>
             {booking.estimatedDeliveryDate && !['delivered', 'collected'].includes(s) && <span>Due {formatDate(booking.estimatedDeliveryDate)}</span>}
@@ -335,6 +352,7 @@ function OrderCard({ booking, tab, isAdmin, store, drivers, assigning, onAssignS
 
         <div className="flex items-center gap-2 flex-wrap lg:justify-end">
           <Action tone="ghost" onClick={() => onDialog('history')} title="Order history"><HiOutlineClipboardList className="w-4 h-4" />History</Action>
+          {canBill && <Action tone="amber" onClick={() => onDialog('bill')} title="Enter the counted items"><HiOutlineCalculator className="w-4 h-4" />{unbilled ? 'Bill items' : 'Edit bill'}</Action>}
 
           {canAssign && (assigning ? (
             <span className="flex items-center gap-1">

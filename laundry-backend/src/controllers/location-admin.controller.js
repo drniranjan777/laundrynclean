@@ -8,6 +8,7 @@ const ServiceablePincode = require('../models/serviceable-pincode.model');
 const { Location, LocationItemPrice, LocationTimeSlot } = require('../models/location.model');
 const { sendSuccess, sendError } = require('../utils/response');
 const { isUuid } = require('../utils/location-scope');
+const { audit } = require('../services/audit.service');
 
 const CODE_PATTERN = /^[A-Z0-9]{2,10}$/;
 const MANAGER_FIELDS = ['id', 'name', 'email', 'phone', 'isActive', 'lastLoginAt'];
@@ -367,6 +368,7 @@ const updateLocationTimeSlots = async (req, res, next) => {
       }
     }
 
+    await audit(req, { action: 'location.slot_capacity', entity: 'location', entityId: location.id, after: { slots } }, t);
     await t.commit();
     return sendSuccess(res, 200, 'Slot capacity saved', { updated: slots.length });
   } catch (error) {

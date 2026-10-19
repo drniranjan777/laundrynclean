@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { HiOutlineHome, HiOutlineClipboardList, HiOutlineUsers, HiOutlineTag, HiOutlineCreditCard, HiOutlineStar, HiOutlineGift, HiOutlineLocationMarker, HiOutlineDocumentText, HiOutlineLogout, HiOutlineMenu, HiOutlineX, HiOutlineCollection, HiOutlineRefresh, HiOutlineIdentification, HiOutlineCurrencyRupee, HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlinePlus, HiOutlineCog, HiOutlineOfficeBuilding } from 'react-icons/hi';
+import { HiOutlineHome, HiOutlineClipboardList, HiOutlineUsers, HiOutlineTag, HiOutlineCreditCard, HiOutlineStar, HiOutlineGift, HiOutlineLocationMarker, HiOutlineDocumentText, HiOutlineLogout, HiOutlineMenu, HiOutlineX, HiOutlineCollection, HiOutlineRefresh, HiOutlineIdentification, HiOutlineCurrencyRupee, HiOutlineChevronLeft, HiOutlineChevronRight, HiOutlinePlus, HiOutlineCog, HiOutlineOfficeBuilding, HiOutlineCalendar } from 'react-icons/hi';
 import { LocationProvider, useLocations } from '../context/LocationContext';
 import logoWordmark from '../assets/brand/logo_wordmark.png';
 import logoMark from '../assets/brand/logo_mark.png';
@@ -12,6 +12,7 @@ const navSections = [
     { path: '/', label: 'Dashboard', icon: HiOutlineHome, managerToo: true },
     { path: '/orders', label: 'Orders', icon: HiOutlineClipboardList, managerToo: true },
     { path: '/order-status', label: 'Order Status', icon: HiOutlineRefresh, managerToo: true },
+    { path: '/schedule-pickup', label: 'Schedule Pickup', icon: HiOutlineCalendar, managerToo: true },
     { path: '/delivery-boys', label: 'Delivery Boys', icon: HiOutlineIdentification, managerToo: true },
   ]},
   { title: 'Customers', items: [

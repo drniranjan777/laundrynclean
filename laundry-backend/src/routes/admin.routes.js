@@ -8,6 +8,7 @@ const gstController = require('../controllers/gst.controller');
 const posController = require('../controllers/pos.controller');
 const locationAdmin = require('../controllers/location-admin.controller');
 const orderWorkflow = require('../controllers/order-workflow.controller');
+const pickupAdmin = require('../controllers/pickup-admin.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { body } = require('express-validator');
@@ -42,6 +43,17 @@ router.post('/bookings/:id/deliver', orderWorkflow.confirmDelivered);
 router.post('/bookings/:id/collect', orderWorkflow.confirmCollected);
 router.post('/bookings/:id/correct-status', authorize('admin'), orderWorkflow.correctStatus);
 router.get('/bookings/:id/events', require('../controllers/booking-event.controller').getBookingEvents);
+// Bill a bulk pickup once its clothes are counted
+router.put('/bookings/:id/bill', pickupAdmin.billBooking);
+
+// Schedule Pickup: managers can read (their own store); changes are admin-only below
+router.get('/pickup/summary', pickupAdmin.pickupSummary);
+router.get('/pickup/settings', pickupAdmin.getPickupSettings);
+router.get('/pickup/slots', pickupAdmin.listSlotsAdmin);
+router.get('/pickup/slot-overrides', pickupAdmin.listSlotOverrides);
+router.get('/pickup/date-exceptions', pickupAdmin.listDateExceptions);
+router.get('/pickup/delivery-charges', pickupAdmin.listChargeRules);
+router.get('/pickup/locations', pickupAdmin.listPickupLocations);
 
 // POS (Offline Orders)
 router.post('/pos/create-order', posController.createOfflineOrder);
@@ -126,5 +138,20 @@ router.get('/wallet/credit-history', adminWallet.getCreditHistory);
 
 // GST Settings
 router.put('/gst', gstController.updateGstSettings);
+
+// Schedule Pickup configuration (every change is written to the audit log)
+router.put('/pickup/settings', pickupAdmin.updatePickupSettings);
+router.post('/pickup/slots', pickupAdmin.createSlot);
+router.put('/pickup/slots/:id', pickupAdmin.updateSlot);
+router.delete('/pickup/slots/:id', pickupAdmin.deleteSlot);
+router.put('/pickup/slot-overrides', pickupAdmin.saveSlotOverride);
+router.delete('/pickup/slot-overrides/:id', pickupAdmin.deleteSlotOverride);
+router.put('/pickup/date-exceptions', pickupAdmin.saveDateException);
+router.delete('/pickup/date-exceptions/:id', pickupAdmin.deleteDateException);
+router.post('/pickup/delivery-charges', pickupAdmin.createChargeRule);
+router.put('/pickup/delivery-charges/:id', pickupAdmin.updateChargeRule);
+router.delete('/pickup/delivery-charges/:id', pickupAdmin.deleteChargeRule);
+router.put('/pickup/locations/:id', pickupAdmin.updatePickupLocation);
+router.get('/pickup/audit-logs', pickupAdmin.listAuditLogs);
 
 module.exports = router;

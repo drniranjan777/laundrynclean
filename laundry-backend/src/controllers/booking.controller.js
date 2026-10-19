@@ -9,41 +9,29 @@ const { generateOrderNumber, canChangeStatus } = require('../utils/helpers');
 const { Op } = require('sequelize');
 const { calculatePromoDiscount, markPromoUsed } = require('./promocode.controller');
 const { debitWallet, refundToWallet } = require('./wallet.controller');
-const { findLocationByPincode, getPriceOverrides, priceAt, getSlotCapacities } = require('../services/location.service');
+const { findLocationByPincode, getPriceOverrides, priceAt } = require('../services/location.service');
 const { canAccessLocation } = require('../utils/location-scope');
 const { Location } = require('../models/location.model');
 const paymentService = require('../services/payment.service');
 const { failureSummaries, recordStaffEvent, customerTimeline } = require('./booking-event.controller');
 const { memberBenefits, memberDiscountOn } = require('../services/subscription.service');
 const { staffOrderFilters } = require('../utils/booking-filters');
+const { listDates, listSlots, assertBookable } = require('../services/pickup-availability.service');
+const { ruleFor, chargesFor } = require('../services/delivery-charge.service');
 const { ORDER_STATUS, ORDER_STATUS_BACKWARD } = require('../utils/constants');
 
-const DELIVERY_FEE = 50;
-const FREE_DELIVERY_THRESHOLD = 250;
-
 /**
- * GET /api/v1/bookings/available-dates
- * Get next 3 available pickup dates (skip Sundays)
+ * GET /api/v1/bookings/available-dates[?addressId=|?pincode=]
+ * Bookable pickup dates for the customer's store: the admin's booking window (tomorrow onward by default),
+ * working days and holidays (see pickup-availability.service). Each: { date, day, display }.
  */
 const getAvailableDates = async (req, res, next) => {
   try {
-    const dates = [];
-    const today = new Date();
-    let current = new Date(today);
-    current.setDate(current.getDate() + 1); // Start from tomorrow
-
-    while (dates.length < 3) {
-      if (current.getDay() !== 0) { // Skip Sundays
-        dates.push({
-          date: current.toISOString().split('T')[0],
-          day: current.toLocaleDateString('en-US', { weekday: 'long' }),
-          display: current.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' }),
-        });
-      }
-      current.setDate(current.getDate() + 1);
-    }
-
-    return sendSuccess(res, 200, 'Available dates fetched', dates);
+    const location = await resolveSlotLocation(req);
+    const { dates } = await listDates(location);
+    return sendSuccess(res, 200, 'Available dates fetched', dates
+      .filter(d => d.available)
+      .map(d => ({ date: d.date, day: d.day, display: d.display })));
   } catch (error) {
     next(error);
   }
@@ -62,54 +50,27 @@ const resolveSlotLocation = async (req) => {
 };
 
 /**
- * Makes concurrent bookings for the same slot, date and store wait for each other until
- * commit/rollback, so two orders can't both read the capacity count before either is saved.
- * Bookings at other stores or on other dates don't wait. The date is normalised by Postgres
- * so "2030/01/07" and "2030-01-07" take the same lock.
- */
-const lockSlotCapacity = (timeSlotId, locationId, pickupDate, transaction) => sequelize.query(
-  `SELECT pg_advisory_xact_lock(hashtextextended(:key || to_char(CAST(:pickupDate AS date), 'YYYY-MM-DD'), 0))`,
-  { replacements: { key: `booking-slot:${timeSlotId}:${locationId || 'none'}:`, pickupDate }, transaction }
-);
-
-/**
  * GET /api/v1/bookings/time-slots?date=2025-04-10[&addressId=...|&pincode=...]
- * Time slots for a date with availability at the customer's store. Without a store
- * (no address/pincode that a store serves) bookings at all stores are counted.
+ * Time slots offered on a date at the customer's store (the slot's weekdays and stores, store capacity and the
+ * date's capacity overrides), with availability. Without a store, orders with no store are counted.
  */
 const getTimeSlots = async (req, res, next) => {
   try {
     const { date } = req.query;
     if (!date) return sendError(res, 400, 'Date is required');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return sendError(res, 400, 'Date must be YYYY-MM-DD');
 
-    const slots = await TimeSlot.findAll({
-      where: { isActive: true },
-      order: [['sortOrder', 'ASC']],
-    });
     const location = await resolveSlotLocation(req);
-    const capacities = await getSlotCapacities(location?.id, slots);
-
-    // Count existing bookings per slot for the date (at the store, when there is one)
-    const slotsWithAvailability = await Promise.all(slots.map(async (slot) => {
-      const where = {
-        pickupDate: date,
-        timeSlotId: slot.id,
-        status: { [Op.notIn]: ['cancelled'] },
-      };
-      if (location) where.locationId = location.id;
-      const bookingCount = await Booking.count({ where });
-      const capacity = capacities.get(slot.id);
-
-      return {
-        ...slot.toJSON(),
-        maxBookings: capacity,
-        bookedCount: bookingCount,
-        available: bookingCount < capacity,
-        remainingSlots: Math.max(capacity - bookingCount, 0),
-      };
-    }));
-
-    return sendSuccess(res, 200, 'Time slots fetched', slotsWithAvailability);
+    const slots = await listSlots(date, location);
+    return sendSuccess(res, 200, 'Time slots fetched', slots.map(({ slot, ...s }) => ({
+      ...slot.toJSON(),
+      maxBookings: s.capacity,
+      bookedCount: s.booked,
+      available: s.available,
+      remainingSlots: s.remaining,
+      status: s.status,
+      reason: s.reason,
+    })));
   } catch (error) {
     next(error);
   }
@@ -137,25 +98,15 @@ const confirmBooking = async (req, res, next) => {
     // The store serving the pickup pincode handles the order, with its own prices and slot capacity
     const location = await findLocationByPincode(address.pincode, t);
 
-    // Validate time slot. The share lock keeps the slot from being changed mid-booking
-    // without making bookings at different stores wait for each other.
-    const timeSlot = await TimeSlot.findByPk(timeSlotId, { lock: t.LOCK.SHARE, transaction: t });
-    if (!timeSlot || !timeSlot.isActive) {
+    // The date and slot must be bookable at this store (admin's window, working days, holidays, slot rules), and
+    // the slot must still have room: concurrent bookings for the same slot, date and store queue on its lock.
+    let timeSlot;
+    try {
+      ({ timeSlot } = await assertBookable({ pickupDate, timeSlotId, location }, t));
+    } catch (error) {
+      if (!error.statusCode) throw error;
       await t.rollback();
-      return sendError(res, 404, 'Time slot not found');
-    }
-
-    // Check slot availability at this store (orders no store serves share one pool).
-    // Concurrent bookings for the same slot, date and store queue on this lock first.
-    await lockSlotCapacity(timeSlot.id, location?.id, pickupDate, t);
-    const capacity = (await getSlotCapacities(location?.id, [timeSlot], t)).get(timeSlot.id);
-    const bookingCount = await Booking.count({
-      where: { pickupDate, timeSlotId, locationId: location?.id || null, status: { [Op.notIn]: ['cancelled'] } },
-      transaction: t,
-    });
-    if (bookingCount >= capacity) {
-      await t.rollback();
-      return sendError(res, 400, 'This time slot is fully booked. Please choose another.');
+      return sendError(res, error.statusCode, error.message);
     }
 
     // Get cart items, locked so a double submit can't turn the same cart into two orders
@@ -198,12 +149,9 @@ const confirmBooking = async (req, res, next) => {
       };
     });
 
-    // Delivery fee, waived for customers whose plan has free delivery
+    // Pickup & delivery charge from the store's charge rule, waived for customers whose plan has free delivery
     const membership = await memberBenefits(req.user.id, t);
-    let deliveryFee = 0;
-    if ((subtotal < FREE_DELIVERY_THRESHOLD || totalQuantity < 10) && !membership?.freeDelivery) {
-      deliveryFee = DELIVERY_FEE;
-    }
+    const { deliveryFee } = chargesFor(await ruleFor(location?.id, t), { subtotal, quantity: totalQuantity, freeDelivery: !!membership?.freeDelivery });
 
     // Validate the promo code and calculate the discount on the server
     let discount = 0;
@@ -403,8 +351,10 @@ const getBookings = async (req, res, next) => {
     if (statuses.some(s => !Object.values(ORDER_STATUS).includes(s))) return sendError(res, 422, 'Unknown order status');
     if (statuses.length) where.status = statuses.length === 1 ? statuses[0] : statuses;
 
-    const handoverOrder = statuses.length === 1 && statuses[0] === 'delivered' ? [['deliveredAt', 'DESC']]
-      : statuses.length === 1 && statuses[0] === 'collected' ? [['collectedAt', 'DESC']] : [];
+    // ?sort=pickup (staff): by scheduled pickup date, for the Schedule Pickup bookings list
+    const handoverOrder = isStaff(req.user) && req.query.sort === 'pickup' ? [['pickupDate', 'ASC'], [{ model: TimeSlot, as: 'timeSlot' }, 'startTime', 'ASC']]
+      : statuses.length === 1 && statuses[0] === 'delivered' ? [['deliveredAt', 'DESC']]
+        : statuses.length === 1 && statuses[0] === 'collected' ? [['collectedAt', 'DESC']] : [];
 
     const { rows, count } = await Booking.findAndCountAll({
       where,

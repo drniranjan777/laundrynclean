@@ -37,6 +37,17 @@ const TimeSlot = sequelize.define('TimeSlot', {
     defaultValue: true,
     field: 'is_active',
   },
+  // Weekdays the slot runs (0 = Sunday … 6 = Saturday)
+  days: {
+    type: DataTypes.ARRAY(DataTypes.SMALLINT),
+    defaultValue: [0, 1, 2, 3, 4, 5, 6],
+  },
+  // Every store has the slot; when false only stores with their own capacity for it (above 0) do
+  allLocations: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    field: 'all_locations',
+  },
 }, {
   tableName: 'time_slots',
   timestamps: true,
@@ -140,6 +151,18 @@ const Booking = sequelize.define('Booking', {
     type: DataTypes.DATEONLY,
     allowNull: true,
     field: 'estimated_delivery_date',
+  },
+  // standard: items chosen in the app; bulk_pickup: a scheduled pickup billed at the store after pickup
+  bookingType: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'standard',
+    field: 'booking_type',
+  },
+  // Sent by the app with a booking so a repeated tap or retry returns the same booking
+  idempotencyKey: {
+    type: DataTypes.STRING(80),
+    allowNull: true,
+    field: 'idempotency_key',
   },
   // Handover: delivered to the customer, or collected by them at the shop
   deliveredAt: {

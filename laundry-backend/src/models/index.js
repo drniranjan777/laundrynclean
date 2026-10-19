@@ -15,6 +15,7 @@ const ServiceablePincode = require('./serviceable-pincode.model');
 const Driver = require('./driver.model');
 const Notification = require('./notification.model');
 const { Location, LocationItemPrice, LocationTimeSlot } = require('./location.model');
+const { PickupSettings, PickupDateException, SlotDateOverride, DeliveryChargeRule, AdminAuditLog } = require('./pickup.model');
 
 // User associations
 User.hasMany(Address, { foreignKey: 'user_id', as: 'addresses' });
@@ -60,6 +61,12 @@ LocationItemPrice.belongsTo(Item, { foreignKey: 'item_id', as: 'item' });
 Location.hasMany(LocationTimeSlot, { foreignKey: 'location_id', as: 'slotCapacities' });
 LocationTimeSlot.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
 LocationTimeSlot.belongsTo(TimeSlot, { foreignKey: 'time_slot_id', as: 'timeSlot' });
+TimeSlot.hasMany(LocationTimeSlot, { foreignKey: 'time_slot_id', as: 'locationCapacities' });
+SlotDateOverride.belongsTo(TimeSlot, { foreignKey: 'time_slot_id', as: 'timeSlot' });
+SlotDateOverride.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
+PickupDateException.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
+DeliveryChargeRule.belongsTo(Location, { foreignKey: 'location_id', as: 'location' });
+AdminAuditLog.belongsTo(User, { foreignKey: 'actor_id', as: 'actor' });
 
 module.exports = {
   User,
@@ -89,5 +96,10 @@ module.exports = {
   Location,
   LocationItemPrice,
   LocationTimeSlot,
+  PickupSettings,
+  PickupDateException,
+  SlotDateOverride,
+  DeliveryChargeRule,
+  AdminAuditLog,
   BookingEvent,
 };

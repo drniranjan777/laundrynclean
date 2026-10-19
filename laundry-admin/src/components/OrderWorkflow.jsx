@@ -318,6 +318,8 @@ const describeEvent = (e) => {
       return { icon: HiOutlineCash, tone: 'bg-green-50 text-green-600', title: `Cash received ₹${Number(e.amount).toFixed(2)}` };
     case 'correction':
       return { icon: HiOutlinePencilAlt, tone: 'bg-amber-50 text-amber-700', title: 'Status corrected' };
+    case 'billed':
+      return { icon: HiOutlineCash, tone: 'bg-teal-50 text-teal-700', title: `Bulk pickup billed ₹${Number(e.amount).toFixed(2)}` };
     default: {
       if (e.toStatus === 'delivered') return { icon: HiOutlineTruck, tone: 'bg-green-50 text-green-600', title: 'Delivered' };
       if (e.toStatus === 'collected') return { icon: HiOutlineOfficeBuilding, tone: 'bg-green-50 text-green-600', title: 'Collected at the shop' };
@@ -380,7 +382,7 @@ export function OrderHistoryModal({ booking, onClose }) {
                 <HiOutlineShoppingBag className="w-4 h-4" />
               </span>
               <p className="text-sm font-medium text-gray-800">Order placed</p>
-              <p className="text-xs text-gray-500">{summary.orderType === 'offline' ? 'Billed at the store' : 'From the customer app'}</p>
+              <p className="text-xs text-gray-500">{summary.orderType === 'offline' ? 'Billed at the store' : summary.bookingType === 'bulk_pickup' ? 'Schedule Pickup (bulk) from the customer app' : 'From the customer app'}</p>
               <p className="text-[11px] text-gray-400 mt-1">{formatDateTime(summary.createdAt)}</p>
             </li>
             {events.map((e) => {
@@ -422,3 +424,6 @@ export function OrderHistoryModal({ booking, onClose }) {
     </Dialog>
   );
 }
+
+// Shared with the other order dialogs (bulk pickup billing)
+export { Dialog, Field, inputClass, SubmitButton, CancelButton };

@@ -68,6 +68,18 @@ const Location = sequelize.define('Location', {
     defaultValue: 0,
     field: 'sort_order',
   },
+  // Customers of this store can schedule pickups
+  pickupEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    field: 'pickup_enabled',
+  },
+  // This store's booking window in days (null = the global setting)
+  maxAdvanceDays: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'max_advance_days',
+  },
 }, {
   tableName: 'locations',
   timestamps: true,

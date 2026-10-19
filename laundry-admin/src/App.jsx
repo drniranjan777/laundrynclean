@@ -17,6 +17,7 @@ import ContentPage from './pages/ContentPage';
 import GstSettingsPage from './pages/GstSettingsPage';
 import PosPage from './pages/PosPage';
 import LocationsPage from './pages/LocationsPage';
+import SchedulePickupPage from './pages/SchedulePickupPage';
 import { useAuth } from './hooks/useAuth';
 
 function ProtectedRoute({ children }) {
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="categories" element={<AdminOnly><CategoriesPage /></AdminOnly>} />
         <Route path="catalogue" element={<AdminOnly><CataloguePage /></AdminOnly>} />
         <Route path="order-status" element={<OrderStatusPage />} />
+        <Route path="schedule-pickup" element={<SchedulePickupPage />} />
         <Route path="delivery-boys" element={<DeliveryBoysPage />} />
         <Route path="wallet-packages" element={<AdminOnly><WalletPackagesPage /></AdminOnly>} />
         <Route path="wallet-credits" element={<AdminOnly><WalletCreditsPage /></AdminOnly>} />

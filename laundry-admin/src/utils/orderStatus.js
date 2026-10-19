@@ -49,12 +49,20 @@ export const statusBadge = (status) => STATUS_META[status]?.badge || 'bg-gray-10
 /** Cancelling and sending an order back to Ready need a reason */
 export const needsReason = (from, to) => to === 'cancelled' || BACKWARD.has(`${from}>${to}`);
 
-/** Cash still due on an order (unpaid cash-on-delivery or pay-later store orders) */
-export const cashDue = (booking) => (booking.paymentMethod === 'cod' && booking.paymentStatus !== 'paid' ? Number(booking.total) : 0);
+/**
+ * Cash still due on an order: unpaid cash-on-delivery or pay-later store orders, and billed bulk pickups the
+ * customer hasn't paid online yet (same rule as the backend's cashDue)
+ */
+export const cashDue = (booking) => (booking.paymentStatus !== 'paid' && (booking.paymentMethod === 'cod' || booking.bookingType === 'bulk_pickup')
+  ? Number(booking.total)
+  : 0);
 
 export const paymentBadge = (booking) => {
   if (booking.paymentStatus === 'paid') return { text: 'Paid', className: 'bg-green-50 text-green-700' };
   if (booking.paymentStatus === 'refunded') return { text: 'Refunded', className: 'bg-gray-100 text-gray-600' };
+  if (booking.bookingType === 'bulk_pickup' && !(Number(booking.total) > 0)) {
+    return { text: booking.paymentMethod === 'cod' ? 'COD · billed after pickup' : 'Online · billed after pickup', className: 'bg-gray-100 text-gray-600' };
+  }
   if (cashDue(booking) > 0) return { text: `Cash due ${rupees(booking.total)}`, className: 'bg-amber-50 text-amber-700' };
   return { text: 'Payment pending', className: 'bg-amber-50 text-amber-700' };
 };

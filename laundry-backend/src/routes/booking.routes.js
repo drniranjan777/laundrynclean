@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bookingController = require('../controllers/booking.controller');
+const { payBooking } = require('../controllers/pickup.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 const { authorize } = require('../middlewares/role.middleware');
 const { body, query } = require('express-validator');
@@ -33,6 +34,8 @@ router.patch('/:id/status', authorize('admin', 'manager'), [
   body('status').isIn(['pending', 'confirmed', 'pickup_scheduled', 'picked_up', 'in_process', 'ready', 'out_for_delivery', 'delivered', 'ready_for_pickup', 'collected', 'cancelled']).withMessage('Invalid status'),
 ], validate, bookingController.updateBookingStatus);
 router.patch('/:id/cancel', bookingController.cancelBooking);
+// Pay online for an order whose amount is known now (a bulk pickup once it is billed)
+router.post('/:id/pay', payBooking);
 router.post('/:id/verify-payment', [
   body('razorpayOrderId').isString().notEmpty().withMessage('razorpayOrderId is required'),
   body('razorpayPaymentId').isString().notEmpty().withMessage('razorpayPaymentId is required'),
