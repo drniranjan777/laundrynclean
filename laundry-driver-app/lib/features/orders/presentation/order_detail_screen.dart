@@ -117,13 +117,17 @@ class _Detail extends StatelessWidget {
           children: [
             _Line(icon: Icons.event_outlined, text: order.pickupDate ?? '—'),
             _Line(icon: Icons.schedule, text: order.slot ?? '—'),
-            _Line(icon: Icons.payments_outlined, text: '${order.paymentLabel} · ${rupees(order.total)}'),
+            if (order.isBulkPickup) const _Line(icon: Icons.local_laundry_service_outlined, text: 'Bulk pickup (Schedule Pickup)'),
+            _Line(icon: Icons.payments_outlined, text: order.awaitingBill ? '${order.paymentLabel} · billed after pickup' : '${order.paymentLabel} · ${rupees(order.total)}'),
             if ((order.customerNote ?? '').isNotEmpty) _Line(icon: Icons.sticky_note_2_outlined, text: order.customerNote!),
           ],
         ),
         _Section(
-          title: 'Items (${order.itemCount})',
+          title: order.isBulkPickup && order.items.isEmpty ? 'Items' : 'Items (${order.itemCount})',
           children: [
+            if (order.isBulkPickup && order.items.isEmpty)
+              Text('Bulk pickup: count every piece when you collect it. The store counts again and bills the order.',
+                  style: text.bodyMedium?.copyWith(color: AppColors.textMuted)),
             for (final i in order.items)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),

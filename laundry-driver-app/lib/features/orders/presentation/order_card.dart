@@ -33,6 +33,7 @@ class OrderCard extends StatelessWidget {
                 Text(order.orderNumber, style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: AppColors.secondary, fontFamily: 'monospace')),
                 const SizedBox(width: 8),
                 _Pill(text: order.statusLabel),
+                if (order.isBulkPickup) ...[const SizedBox(width: 6), const _Pill(text: 'Bulk')],
                 const Spacer(),
                 if (order.amountToCollect > 0)
                   _Pill(text: 'Collect ${rupees(order.amountToCollect)}', strong: true),
@@ -54,7 +55,8 @@ class OrderCard extends StatelessWidget {
                     style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
-                Text('${order.itemCount} item${order.itemCount == 1 ? '' : 's'}', style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
+                Text(order.isBulkPickup && order.items.isEmpty ? 'Count at pickup' : '${order.itemCount} item${order.itemCount == 1 ? '' : 's'}',
+                    style: text.bodySmall?.copyWith(color: AppColors.textMuted)),
               ]),
               if (order.failedAttempts > 0)
                 Padding(

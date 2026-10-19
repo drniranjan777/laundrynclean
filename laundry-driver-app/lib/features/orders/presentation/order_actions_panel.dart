@@ -213,8 +213,12 @@ class _PickedUpSheetState extends ConsumerState<PickedUpSheet> {
         SizedBox(width: 48, child: Text('$_count', textAlign: TextAlign.center, style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700))),
         IconButton.outlined(onPressed: () => setState(() => _count++), icon: const Icon(Icons.add)),
       ]),
-      Text(mismatch ? 'The order says ${widget.order.itemCount}. Add a note about the difference.' : 'Matches the order (${widget.order.itemCount}).',
-          style: text.bodySmall?.copyWith(color: mismatch ? const Color(0xFFB45309) : AppColors.textMuted)),
+      if (widget.order.isBulkPickup && widget.order.items.isEmpty)
+        Text('Bulk pickup: count every piece (or bag) you collect. The store bills the order after counting.',
+            style: text.bodySmall?.copyWith(color: AppColors.textMuted))
+      else
+        Text(mismatch ? 'The order says ${widget.order.itemCount}. Add a note about the difference.' : 'Matches the order (${widget.order.itemCount}).',
+            style: text.bodySmall?.copyWith(color: mismatch ? const Color(0xFFB45309) : AppColors.textMuted)),
       const SizedBox(height: 12),
       TextField(controller: _note, maxLength: 500, maxLines: 2, decoration: const InputDecoration(hintText: 'Note (e.g. stain on one shirt)', isDense: true)),
       PhotoPicker(photo: _photo, onChanged: (p) => setState(() => _photo = p), label: 'Photo of the clothes (optional)'),

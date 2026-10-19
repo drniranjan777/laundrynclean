@@ -106,6 +106,7 @@ class DriverOrder {
     this.customerNote,
     this.failedAttempts = 0,
     this.lastFailureReason,
+    this.isBulkPickup = false,
   });
 
   final String id;
@@ -126,6 +127,12 @@ class DriverOrder {
   final String? customerNote;
   final int failedAttempts;
   final String? lastFailureReason;
+
+  /// Schedule Pickup (bulk): no item list at booking; the partner counts the pieces and the store bills them
+  final bool isBulkPickup;
+
+  /// A bulk pickup not billed yet (nothing to collect until the store bills it)
+  bool get awaitingBill => isBulkPickup && total <= 0;
 
   /// Statuses the driver acts on: pickup → picked_up → (handed to store) in_process; ready → out_for_delivery → delivered.
   bool get atPickup => stage == OrderStage.pickup;
@@ -166,6 +173,7 @@ class DriverOrder {
       customerNote: (json['customerNote'] ?? json['notes']) as String?,
       failedAttempts: (json['failedAttempts'] as num?)?.toInt() ?? 0,
       lastFailureReason: (json['lastFailure'] as Map?)?['reason'] as String?,
+      isBulkPickup: json['bookingType'] == 'bulk_pickup',
     );
   }
 }
