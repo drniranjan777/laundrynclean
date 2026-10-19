@@ -2,19 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
+import '../../../core/widgets/brand_widgets.dart';
 import '../../wallet/presentation/wallet_screen.dart';
 import '../data/pickup_repository.dart';
 
 /// Shared pieces of the Schedule Pickup screens: the branded app bar, numbered step cards and info cards.
 
-/// Back · NClean logo (no tagline) · wallet balance.
+/// Back · NClean logo (no tagline) · wallet balance with "+" · avatar, as in the design.
 PreferredSizeWidget pickupAppBar(BuildContext context) => AppBar(
-  toolbarHeight: 64,
+  toolbarHeight: 68,
   centerTitle: false,
   backgroundColor: AppColors.surfaceMuted,
   titleSpacing: 0,
-  title: Image.asset('assets/images/logo_wordmark.png', height: 30, semanticLabel: 'NClean'),
-  actions: const [WalletChip(), SizedBox(width: 16)],
+  title: Image.asset('assets/images/logo_wordmark.png', height: 32, semanticLabel: 'NClean'),
+  actions: const [WalletChip(), SizedBox(width: 10), BrandAvatar(size: 40), SizedBox(width: 16)],
 );
 
 /// White card with a numbered badge, title and subtitle (steps 1–4 in the design).
@@ -79,42 +80,18 @@ class StepCard extends StatelessWidget {
   }
 }
 
-/// Laundry basket drawn with icons (no extra image assets), used on the info card and confirmation.
+/// Laundry basket illustration from the design, used on the info and Home cards.
 class BasketArt extends StatelessWidget {
   const BasketArt({super.key, this.size = 84});
 
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sky.withValues(alpha: 0.12)),
-          ),
-          Positioned(
-            top: size * 0.14,
-            child: Icon(Icons.dry_cleaning_outlined, size: size * 0.38, color: AppColors.blue),
-          ),
-          Positioned(
-            bottom: size * 0.12,
-            child: Icon(Icons.shopping_basket_rounded, size: size * 0.56, color: AppColors.secondary.withValues(alpha: 0.85)),
-          ),
-          Positioned(
-            right: size * 0.06,
-            top: size * 0.1,
-            child: Icon(Icons.eco, size: size * 0.24, color: AppColors.teal),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size * 0.76,
+    child: Image.asset('assets/images/art_basket_card.webp', fit: BoxFit.contain, excludeFromSemantics: true),
+  );
 }
 
 /// "For Bulk Orders Only" card at the top of the first screen.
@@ -126,9 +103,9 @@ class BulkInfoCard extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
-      decoration: BoxDecoration(color: AppColors.blue.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: const Color(0xFFE7F6FE), borderRadius: BorderRadius.circular(16)),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           const Icon(Icons.info, color: AppColors.blue, size: 22),
           const SizedBox(width: 10),
@@ -149,7 +126,7 @@ class BulkInfoCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          const BasketArt(size: 72),
+          const BasketArt(size: 96),
         ],
       ),
     );

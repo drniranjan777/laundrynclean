@@ -17,6 +17,13 @@ class AppColors {
   static const surface = Colors.white;
   static const surfaceMuted = Color(0xFFF3F7FB);
 
+  // From the app screen designs
+  static const deepTeal = Color(0xFF03586E); // Book Pickup / See More buttons, selected chip, wallet "+"
+  static const accent = Color(0xFFEF7757); // offers, discount badges, selected bottom tab
+  static const peach = Color(0xFFFFE5D7); // unselected sub-category chips
+  static const bannerBg = Color(0xFFEEF6FF); // home offer banner
+  static const tealTint = Color(0xFFE7F0F4); // pickup card, wallet chip
+
   /// The logo's wave, for headers and promo cards.
   static const brandGradient = LinearGradient(colors: [secondary, blue, teal], begin: Alignment.topLeft, end: Alignment.bottomRight);
 }

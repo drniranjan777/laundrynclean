@@ -103,11 +103,14 @@ class _Badge extends StatelessWidget {
 }
 
 /// "+" when the item isn't in the cart, else − n +. Changes the line without colour / size.
+/// [alwaysShowCount] keeps "− 0 +" visible (the Home service list in the designs).
 class QuantityStepper extends ConsumerStatefulWidget {
-  const QuantityStepper({super.key, required this.itemId, required this.quantity});
+  const QuantityStepper({super.key, required this.itemId, required this.quantity, this.alwaysShowCount = false, this.color = AppColors.primary});
 
   final String itemId;
   final int quantity;
+  final bool alwaysShowCount;
+  final Color color;
 
   @override
   ConsumerState<QuantityStepper> createState() => _QuantityStepperState();
@@ -130,26 +133,27 @@ class _QuantityStepperState extends ConsumerState<QuantityStepper> {
 
   @override
   Widget build(BuildContext context) {
-    Widget circle(IconData icon, VoidCallback onTap, {bool filled = true}) => InkResponse(
+    final color = widget.color;
+    Widget circle(IconData icon, VoidCallback? onTap, {bool filled = true}) => InkResponse(
           onTap: _busy ? null : onTap,
           radius: 20,
           child: Container(
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: filled ? AppColors.primary : Colors.white,
+              color: filled ? color : Colors.white,
               shape: BoxShape.circle,
-              border: filled ? null : Border.all(color: AppColors.primary),
+              border: filled ? null : Border.all(color: AppColors.border),
             ),
-            child: Icon(icon, size: 18, color: filled ? Colors.white : AppColors.primary),
+            child: Icon(icon, size: 18, color: filled ? Colors.white : (onTap == null ? AppColors.border : AppColors.textMuted)),
           ),
         );
 
-    if (widget.quantity == 0) return circle(Icons.add, () => _step(1));
+    if (widget.quantity == 0 && !widget.alwaysShowCount) return circle(Icons.add, () => _step(1));
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        circle(Icons.remove, () => _step(-1), filled: false),
+        circle(Icons.remove, widget.quantity == 0 ? null : () => _step(-1), filled: false),
         SizedBox(
           width: 28,
           child: _busy

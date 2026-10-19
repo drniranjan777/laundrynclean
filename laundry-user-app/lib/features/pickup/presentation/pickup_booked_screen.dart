@@ -5,7 +5,6 @@ import '../../../core/router/app_router.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
 import '../data/pickup_repository.dart';
-import 'pickup_widgets.dart';
 
 /// "Pickup Booked!" confirmation after POST /pickups succeeded (only ever shown for a real order).
 class PickupBookedScreen extends StatelessWidget {
@@ -160,57 +159,21 @@ class PickupBookedScreen extends StatelessWidget {
   }
 }
 
+/// The "booked" illustration from the design (check mark, calendar, folded clothes and basket).
 class _Celebration extends StatelessWidget {
   const _Celebration();
 
   @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 190,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 230,
-            height: 170,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.sky.withValues(alpha: 0.08)),
-          ),
-          Positioned(
-            top: 6,
-            child: Container(
-              width: 104,
-              height: 104,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.teal.withValues(alpha: 0.12)),
-              child: Center(
-                child: Container(
-                  width: 78,
-                  height: 78,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white,
-                    border: Border.all(color: AppColors.teal, width: 6),
-                  ),
-                  child: const Icon(Icons.check_rounded, size: 50, color: AppColors.teal),
-                ),
-              ),
-            ),
-          ),
-          const Positioned(top: 18, left: 80, child: Icon(Icons.auto_awesome, color: Color(0xFFF59E0B), size: 22)),
-          const Positioned(top: 40, right: 78, child: Icon(Icons.auto_awesome, color: Color(0xFFF59E0B), size: 18)),
-          Positioned(
-            bottom: 4,
-            left: 70,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: AppColors.blue.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-              child: const Icon(Icons.event_available, color: AppColors.blue, size: 30),
-            ),
-          ),
-          const Positioned(bottom: 0, right: 64, child: BasketArt(size: 70)),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0.85, end: 1),
+    duration: const Duration(milliseconds: 600),
+    curve: Curves.easeOutBack,
+    builder: (_, scale, child) => Transform.scale(scale: scale, child: child),
+    child: AspectRatio(
+      aspectRatio: 745 / 400,
+      child: Image.asset('assets/images/art_pickup_success.webp', fit: BoxFit.contain, semanticLabel: 'Pickup booked'),
+    ),
+  );
 }
 
 class _Row extends StatelessWidget {

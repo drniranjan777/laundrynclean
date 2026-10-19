@@ -270,33 +270,49 @@ class TransactionTile extends StatelessWidget {
   }
 }
 
-/// Balance pill for app bars; opens the wallet.
+/// Wallet balance for headers (as in the designs): tap to open the wallet, "+" to add money.
 class WalletChip extends ConsumerWidget {
   const WalletChip({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final balance = ref.watch(walletBalanceProvider).value;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Material(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: () async {
-            await context.push('/wallet');
-            refreshWallet(ref);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.account_balance_wallet_outlined, size: 18, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(balance == null ? '₹—' : rupees(balance),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700)),
-            ]),
-          ),
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: AppColors.primary.withValues(alpha: 0.12)));
+    return Material(
+      color: AppColors.tealTint,
+      shape: shape,
+      child: InkWell(
+        customBorder: shape,
+        onTap: () async {
+          await context.push('/wallet');
+          refreshWallet(ref);
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.account_balance_wallet_outlined, size: 20, color: AppColors.secondary),
+            const SizedBox(width: 6),
+            Text(balance == null ? '₹ —' : '₹ ${balance.toStringAsFixed(2)}',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(color: AppColors.secondary, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 6),
+            Semantics(
+              button: true,
+              label: 'Add money',
+              child: InkResponse(
+                radius: 18,
+                onTap: () async {
+                  await context.push('/wallet/add');
+                  refreshWallet(ref);
+                },
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: const BoxDecoration(color: AppColors.deepTeal, shape: BoxShape.circle),
+                  child: const Icon(Icons.add, size: 18, color: Colors.white),
+                ),
+              ),
+            ),
+          ]),
         ),
       ),
     );

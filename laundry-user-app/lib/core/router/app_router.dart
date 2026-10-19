@@ -84,7 +84,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (session.status == SessionStatus.unknown) {
         return location == Routes.splash || location == Routes.blocked ? null : Routes.splash;
       }
-      if (!session.isSignedIn && !Routes.public.contains(location)) return Routes.signIn;
+      // Terms and Privacy are linked from the sign-in screen, so they open without an account
+      if (!session.isSignedIn && !Routes.public.contains(location) && !location.startsWith('/content/')) return Routes.signIn;
       if (session.isSignedIn && (location == Routes.signIn || location == Routes.otp)) {
         return routeAfterSignIn(session, ref.read(serviceAreaProvider));
       }
